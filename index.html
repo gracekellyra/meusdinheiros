@@ -369,31 +369,38 @@ function App(){
     return items.sort((a,b)=>a.date.localeCompare(b.date));
   },[txs,accounts,mKey,month]);
 
+  // Balance at END of viewed month = prevBal + this month's changes
+  // Uses same logic as getBankPrev but includes the viewed month
   const getBankBal=useCallback((id)=>{
-    // Calculate balance up to END of viewed month (inclusive)
-    const viewedMonthEnd=new Date(month.y,month.m+1,1); // first of next month = end of viewed month
+    const afterMonthEnd=new Date(month.y,month.m+1,1); // 1st of next month
+    const afterMonthEndStr=afterMonthEnd.getFullYear()+"-"+String(afterMonthEnd.getMonth()+1).padStart(2,"0")+"-01";
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
       const val=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;
       if(val===0)return s;
       if(t.isRecurring){
         const start=new Date(t.date+"T12:00:00");
-        if(start>=viewedMonthEnd)return s;
-        let endLimit=viewedMonthEnd;
-        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<start)return s;if(ed<viewedMonthEnd)endLimit=new Date(ed.getFullYear(),ed.getMonth()+1,1)}
+        if(start>=afterMonthEnd)return s;
+        let endLimit=afterMonthEnd;
+        if(t.endDate){
+          const ed=new Date(t.endDate+"T12:00:00");
+          if(ed<start)return s;
+          const edNext=new Date(ed.getFullYear(),ed.getMonth()+1,1);
+          if(edNext<afterMonthEnd)endLimit=edNext;
+        }
         let count=0;
         const d=new Date(start.getFullYear(),start.getMonth(),1);
         while(d<endLimit){
           const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
-          if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){count++}
+          if(!(t.excludedMonths&&t.excludedMonths.includes(mk)))count++;
           d.setMonth(d.getMonth()+1);
         }
         return s+val*count;
       }
-      // Normal: only if date is before end of viewed month
-      if(t.date<mKey+"-32")return s+val;
+      // Non-recurring: include only if date is strictly before 1st of next month
+      if(t.date<afterMonthEndStr)return s+val;
       return s;
     },0);
-  },[txs,month,mKey]);
+  },[txs,month]);
   const getBankPrev=useCallback((id)=>{
     const c=mKey+"-01";
     const currentMonthStart=new Date(month.y,month.m,1);
