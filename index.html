@@ -231,24 +231,80 @@ function App(){
   const updateTx=useCallback((id,data)=>{
     setTxs(p=>{
       const orig=p.find(t=>t.id===id);
-      let updated=p.map(t=>t.id===id?{...t,...data}:t);
+      if(!orig)return p;
+      
+      // For recurring transactions: convert paid to paidMonths
+      let patchData={...data};
+      if(orig.isRecurring&&data.paid!==undefined){
+        const pm=orig.paidMonths?[...orig.paidMonths]:[];
+        if(data.paid&&!pm.includes(mKey)){pm.push(mKey)}
+        else if(!data.paid){const idx=pm.indexOf(mKey);if(idx>=0)pm.splice(idx,1)}
+        patchData.paidMonths=pm;
+        delete patchData.paid; // don't overwrite base paid
+      }
+      
+      let updated=p.map(t=>t.id===id?{...t,...patchData}:t);
       // If it's a transfer, update the mirror too
-      if(orig){
-        if(orig.type==="transfer"||orig.type==="transfer_in"){
-          const mirrorId=orig.type==="transfer"?p.find(t=>t._mirrorOf===id)?.id:orig._mirrorOf;
-          if(mirrorId){
-            updated=updated.map(t=>t.id===mirrorId?{...t,description:data.description||t.description,amount:data.amount!==undefined?data.amount:t.amount,date:data.date||t.date,category:data.category?data.category:t.category,dueDate:data.dueDate!==undefined?data.dueDate:t.dueDate,paid:data.paid!==undefined?data.paid:t.paid}:t);
+      if(orig.type==="transfer"||orig.type==="transfer_in"){
+        const mirrorId=orig.type==="transfer"?p.find(t=>t._mirrorOf===id)?.id:orig._mirrorOf;
+        if(mirrorId){
+          const mirrorPatch={};
+          if(data.description)mirrorPatch.description=data.description;
+          if(data.amount!==undefined)mirrorPatch.amount=data.amount;
+          if(data.date)mirrorPatch.date=data.date;
+          if(data.dueDate!==undefined)mirrorPatch.dueDate=data.dueDate;
+          if(data.paid!==undefined){
+            const mo=p.find(t=>t.id===mirrorId);
+            if(mo&&mo.isRecurring){
+              const mpm=mo.paidMonths?[...mo.paidMonths]:[];
+              if(data.paid&&!mpm.includes(mKey))mpm.push(mKey);
+              else if(!data.paid){const idx=mpm.indexOf(mKey);if(idx>=0)mpm.splice(idx,1)}
+              mirrorPatch.paidMonths=mpm;
+            } else {
+              mirrorPatch.paid=data.paid;
+            }
           }
+          updated=updated.map(t=>t.id===mirrorId?{...t,...mirrorPatch}:t);
         }
       }
       return updated.sort((a,b)=>a.date.localeCompare(b.date));
     });
     setModal(null);setEditItem(null);
-  },[]);
+  },[mKey]);
 
-  const moveTxToAccount=useCallback((id,nid)=>{setTxs(p=>p.map(t=>t.id===id?{...t,accountId:nid}:t));setModal(null);setEditItem(null)},[]);
-  const togglePaid=useCallback((id)=>{setTxs(p=>p.map(t=>t.id===id?{...t,paid:!t.paid}:t))},[]);
-  const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>p.map(t=>{if(t.id!==id)return t;const pm=t.paidMonths?[...t.paidMonths]:[];if(pm.includes(mk))return{...t,paidMonths:pm.filter(x=>x!==mk)};return{...t,paidMonths:[...pm,mk]}}))},[]);
+  const moveTxToAccount=useCallback((id,nid)=>{setTxs(p=>{
+    const t=p.find(x=>x.id===id);if(!t)return p;
+    let updated=p.map(x=>x.id===id?{...x,accountId:nid}:x);
+    // Update mirror: if this is a transfer, the mirror's fromAccountId/toAccountId needs updating
+    if(t.type==="transfer"){
+      // Mirror is the transfer_in with _mirrorOf === id
+      updated=updated.map(x=>x._mirrorOf===id?{...x,fromAccountId:nid}:x);
+    }
+    if(t.type==="transfer_in"&&t._mirrorOf){
+      // Original is the transfer with id === _mirrorOf
+      updated=updated.map(x=>x.id===t._mirrorOf?{...x,toAccountId:nid}:x);
+    }
+    return updated;
+  });setModal(null);setEditItem(null)},[]);
+  const togglePaid=useCallback((id)=>{setTxs(p=>{
+    const t=p.find(x=>x.id===id);if(!t)return p;
+    let updated=p.map(x=>x.id===id?{...x,paid:!x.paid}:x);
+    // Sync transfer mirror
+    if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid)updated=updated.map(x=>x.id===mid.id?{...x,paid:!t.paid}:x)}
+    if(t.type==="transfer_in"&&t._mirrorOf){updated=updated.map(x=>x.id===t._mirrorOf?{...x,paid:!t.paid}:x)}
+    return updated;
+  })},[]);
+  const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>{
+    const t=p.find(x=>x.id===id);if(!t)return p;
+    const pm=t.paidMonths?[...t.paidMonths]:[];
+    const nowPaid=pm.includes(mk);
+    const newPm=nowPaid?pm.filter(x=>x!==mk):[...pm,mk];
+    let updated=p.map(x=>x.id===id?{...x,paidMonths:newPm}:x);
+    // Sync transfer mirror
+    if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid){const mpm=mid.paidMonths?[...mid.paidMonths]:[];const mnew=nowPaid?mpm.filter(x=>x!==mk):(mpm.includes(mk)?mpm:[...mpm,mk]);updated=updated.map(x=>x.id===mid.id?{...x,paidMonths:mnew}:x)}}
+    if(t.type==="transfer_in"&&t._mirrorOf){const orig=p.find(x=>x.id===t._mirrorOf);if(orig){const opm=orig.paidMonths?[...orig.paidMonths]:[];const onew=nowPaid?opm.filter(x=>x!==mk):(opm.includes(mk)?opm:[...opm,mk]);updated=updated.map(x=>x.id===t._mirrorOf?{...x,paidMonths:onew}:x)}}
+    return updated;
+  })},[]);
   const deleteTx=useCallback((id,opts)=>{
     const deleteGroup=opts?.group;
     const recurMode=opts?.recurMode; // "this"|"forward"|"all"
@@ -547,7 +603,10 @@ function App(){
               {running!==null&&<div style={{fontSize:9,color:"#64748b",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>Saldo: {fmt(running)}</div>}
               <div style={{display:"flex",gap:3,justifyContent:"flex-end",marginTop:3}}>
                 {moveTargets.length>0&&!t._virtual&&<button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("moveTx")}}><IcoMove/></button>}
-                <button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("editTx")}}><IcoEdit/></button>
+                <button style={ST.sBtn} onClick={()=>{
+                  const ei=t._virtual&&t.isRecurring?{...t,paid:t._recurPaid}:t;
+                  setEditItem(ei);setModal("editTx");
+                }}><IcoEdit/></button>
                 {/* Delete: recurring virtual → delete original; installment → modal; normal → direct */}
                 {t._virtual&&t.isRecurring?
                   <button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>{setEditItem(t);setModal("delRecurring")}}><IcoTrash/></button>
