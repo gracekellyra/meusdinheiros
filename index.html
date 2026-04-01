@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0c0a1a">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Finanças</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;width:100%;background:#0c0a1a;overflow-x:hidden}
+body{font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+input,select,button{font-family:'DM Sans',sans-serif}
+input:focus,select:focus{outline:none;border-color:#5eead4 !important}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+.field-error{border-color:#f87171 !important;box-shadow:0 0 0 1px #f87171}
+.suggestions-list{position:absolute;top:100%;left:0;right:0;background:#1e1b3a;border:1px solid #2d2a4a;border-radius:0 0 10px 10px;max-height:150px;overflow-y:auto;z-index:20}
+.suggestions-list button{display:block;width:100%;padding:10px 14px;background:none;border:none;color:#e2e8f0;text-align:left;font-size:14px;cursor:pointer}
+.suggestions-list button:hover,.suggestions-list button:focus{background:#2d2a4a}
+</style>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').catch(()=>{})})}
+</script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useMemo,useRef}=React;
+
+/* ─── Categories with subcategories ─── */
+const CAT_TREE = {
+  "Alimentação":["Supermercado","Restaurante","Delivery","Padaria","Feira","Outros"],
+  "Moradia":["Aluguel","Condomínio","Energia","Água","Gás","Internet","IPTU","Manutenção","Outros"],
+  "Transporte":["Combustível","Estacionamento","Transporte público","Uber/99","Manutenção veículo","Seguro veículo","IPVA","Pedágio","Outros"],
+  "Saúde":["Plano de saúde","Consulta médica","Farmácia","Dentista","Exames","Academia","Outros"],
+  "Educação":["Escola/Faculdade","Curso online","Livros","Material escolar","Outros"],
+  "Lazer":["Cinema/Teatro","Viagem","Streaming","Jogos","Hobby","Bares","Outros"],
+  "Vestuário":["Roupas","Calçados","Acessórios","Outros"],
+  "Renda":["Salário","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Outros"],
+  "Finanças":["Transferência","Empréstimo","Juros","Tarifas bancárias","Outros"],
+  "Compras":["Eletrônicos","Móveis","Eletrodomésticos","Presentes","Outros"],
+  "Serviços":["Assinaturas","Celular","Seguros","Contabilidade","Outros"],
+  "Pets":["Ração","Veterinário","Acessórios","Outros"],
+  "Pessoal":["Beleza","Cuidados pessoais","Outros"],
+  "Outros":["Outros"]
+};
+const CAT_KEYS=Object.keys(CAT_TREE);
+const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const ACCT_COLORS=["#5eead4","#818cf8","#fbbf24","#f472b6","#fb923c","#a78bfa","#34d399","#f87171","#38bdf8","#e879f9"];
+const PROF_COLORS=["#5eead4","#818cf8","#fbbf24","#f472b6"];
+
+const fmt=(v)=>{try{return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}catch{return"R$ 0,00"}};
+const td=()=>new Date().toISOString().split("T")[0];
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+const STORE_KEY="financas_app_data";
+const DD={profiles:[],accounts:[],txs:[],curProfileId:null};
+function loadAll(){try{const r=localStorage.getItem(STORE_KEY);if(r)return JSON.parse(r)}catch(e){}return DD}
+function saveAll(d){try{localStorage.setItem(STORE_KEY,JSON.stringify(d))}catch(e){}}
+
+/* ─── Icons ─── */
+function IcoBank(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M12 3l9 7H3z"/><path d="M5 10v11"/><path d="M19 10v11"/><path d="M9 10v11"/><path d="M15 10v11"/></svg>}
+function IcoCard(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>}
+function IcoPlus(){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+function IcoTrash(){return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>}
+function IcoEdit(){return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
+function IcoChevL(){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>}
+function IcoChevR(){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>}
+function IcoClose(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>}
+function IcoUp(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>}
+function IcoDown(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>}
+function IcoTransfer(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>}
+function IcoBack(){return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>}
+function IcoUser(){return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
+function IcoCheck(){return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+function IcoMove(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/></svg>}
+function IcoSearch(){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>}
+function IcoMinus(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+function IcoPlusSmall(){return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+
+/* ─── UI Components ─── */
+function Modal({open,onClose,title,children}){if(!open)return null;return <div style={ST.overlay} onClick={onClose}><div style={ST.modal} onClick={e=>e.stopPropagation()}><div style={ST.modalH}><h3 style={{fontSize:17,fontWeight:700}}>{title}</h3><button style={ST.iBtn} onClick={onClose}><IcoClose/></button></div>{children}</div></div>}
+function Field({label,children,error}){return <div style={{display:"flex",flexDirection:"column",gap:5}}><label style={ST.lbl}>{label}</label>{children}{error&&<span style={{fontSize:11,color:"#f87171"}}>{error}</span>}</div>}
+function SumCard({label,value,color}){return <div style={{flex:"1 1 130px",background:"#13102a",borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:3,borderLeft:"3px solid "+color}}><span style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span><span style={{fontSize:15,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color}}>{value}</span></div>}
+
+/* Category Selector */
+function CatSelect({value,onChange,style}){
+  const parts=value?value.split(" > "):["Outros","Outros"];
+  const cat=parts[0]||"Outros";
+  const sub=parts[1]||"Outros";
+  const subs=CAT_TREE[cat]||["Outros"];
+  return <div style={{display:"flex",gap:6}}>
+    <select style={{...style,flex:1}} value={cat} onChange={e=>{const c=e.target.value;const s=(CAT_TREE[c]||["Outros"])[0];onChange(c+" > "+s)}}>
+      {CAT_KEYS.map(c=><option key={c} value={c}>{c}</option>)}
+    </select>
+    <select style={{...style,flex:1}} value={sub} onChange={e=>onChange(cat+" > "+e.target.value)}>
+      {subs.map(s=><option key={s} value={s}>{s}</option>)}
+    </select>
+  </div>
+}
+
+/* Description with autocomplete */
+function DescInput({value,onChange,suggestions,style,className}){
+  const[show,setShow]=useState(false);
+  const[filtered,setFiltered]=useState([]);
+  const ref=useRef(null);
+  const handleChange=(v)=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else{setShow(false)}};
+  return <div style={{position:"relative"}}>
+    <input ref={ref} style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>
+    {show&&<div className="suggestions-list">{filtered.map((s,i)=><button key={i} onMouseDown={e=>{e.preventDefault();onChange(s);setShow(false)}}>{s}</button>)}</div>}
+  </div>
+}
+
+/* Installment stepper */
+function InstStepper({value,onChange,disabled}){
+  return <div style={{display:"flex",alignItems:"center",gap:0,background:"#1e1b3a",border:"1px solid #2d2a4a",borderRadius:10,overflow:"hidden"}}>
+    <button style={{...ST.stepBtn,opacity:disabled?0.3:1}} disabled={disabled||value<=1} onClick={()=>onChange(Math.max(1,value-1))}><IcoMinus/></button>
+    <input type="number" min="1" max="48" style={{...ST.input,width:50,textAlign:"center",border:"none",borderRadius:0,padding:"11px 4px"}} value={value} onChange={e=>onChange(parseInt(e.target.value)||1)} disabled={disabled}/>
+    <button style={{...ST.stepBtn,opacity:disabled?0.3:1}} disabled={disabled} onClick={()=>onChange(Math.min(48,value+1))}><IcoPlusSmall/></button>
+  </div>
+}
+
+/* ══════════════════════════════════════════
+   MAIN APP
+   ══════════════════════════════════════════ */
+function App(){
+  const init=useRef(loadAll());
+  const[profiles,setProfiles]=useState(init.current.profiles||[]);
+  const[curProfileId,setCurProfileId]=useState(init.current.curProfileId||null);
+  const[accounts,setAccounts]=useState(init.current.accounts||[]);
+  const[txs,setTxs]=useState(init.current.txs||[]);
+  const[viewStack,setViewStack]=useState(["home"]); // navigation stack
+  const[selAcctId,setSelAcctId]=useState(null);
+  const[modal,setModal]=useState(null);
+  const[editItem,setEditItem]=useState(null);
+  const[profMenuOpen,setProfMenuOpen]=useState(false);
+  const[searchOpen,setSearchOpen]=useState(false);
+  const[searchQ,setSearchQ]=useState("");
+  const[month,setMonth]=useState(()=>{const d=new Date();return{m:d.getMonth(),y:d.getFullYear()}});
+
+  const view=viewStack[viewStack.length-1];
+  const pushView=(v)=>setViewStack(p=>[...p,v]);
+  const popView=()=>setViewStack(p=>p.length>1?p.slice(0,-1):p);
+
+  // Back button handler
+  useEffect(()=>{
+    const handler=(e)=>{if(viewStack.length>1){e.preventDefault();popView()}};
+    window.addEventListener('popstate',handler);
+    return()=>window.removeEventListener('popstate',handler);
+  },[viewStack]);
+  useEffect(()=>{if(viewStack.length>1)window.history.pushState(null,"")},[viewStack]);
+
+  /* Auto-save */
+  const st=useRef(null);const fr=useRef(true);
+  useEffect(()=>{if(fr.current){fr.current=false;return}if(st.current)clearTimeout(st.current);st.current=setTimeout(()=>saveAll({profiles,accounts,txs,curProfileId}),400);return()=>{if(st.current)clearTimeout(st.current)}},[profiles,accounts,txs,curProfileId]);
+
+  const mKey=`${month.y}-${String(month.m+1).padStart(2,"0")}`;
+  const activeProfile=profiles.find(p=>p.id===curProfileId)||null;
+  const myAccounts=useMemo(()=>accounts.filter(a=>a.profileId===curProfileId),[accounts,curProfileId]);
+  const bankAccts=useMemo(()=>myAccounts.filter(a=>a.type==="bank"),[myAccounts]);
+  const cardAccts=useMemo(()=>myAccounts.filter(a=>a.type==="card"),[myAccounts]);
+  const curAcct=accounts.find(a=>a.id===selAcctId)||null;
+  const allDescriptions=useMemo(()=>[...new Set(txs.map(t=>t.description).filter(Boolean))],[txs]);
+
+  const navMonth=(d)=>setMonth(p=>{let m=p.m+d,y=p.y;if(m<0){m=11;y--}else if(m>11){m=0;y++}return{m,y}});
+  const getProfName=(acct)=>{const pr=(profiles||[]).find(p=>p.id===acct.profileId);return pr?pr.name:""};
+
+  /* Profile */
+  const addProfile=(d)=>{const np={id:uid(),...d};setProfiles(p=>[...p,np]);setCurProfileId(np.id);setModal(null)};
+  const deleteProfile=(id)=>{const aIds=accounts.filter(a=>a.profileId===id).map(a=>a.id);setAccounts(p=>p.filter(a=>a.profileId!==id));setTxs(p=>p.filter(t=>!aIds.includes(t.accountId)));setProfiles(p=>p.filter(x=>x.id!==id));if(curProfileId===id){const rem=profiles.filter(x=>x.id!==id);setCurProfileId(rem.length>0?rem[0].id:null)}setViewStack(["home"]);setProfMenuOpen(false)};
+
+  /* Account */
+  const addAccount=(d)=>{setAccounts(p=>[...p,{id:uid(),profileId:curProfileId,...d}]);setModal(null)};
+  const deleteAccount=(id)=>{if(!confirm("Excluir conta e todas transações?"))return;setAccounts(p=>p.filter(a=>a.id!==id));setTxs(p=>p.filter(t=>t.accountId!==id&&t.toAccountId!==id));if(selAcctId===id)setViewStack(["home"])};
+
+  /* ─── Transaction CRUD ─── */
+  const addTx=useCallback((tx)=>{
+    const batch=[];
+    if(tx.installments>1){
+      const gid=uid();
+      for(let i=0;i<tx.installments;i++){
+        const d=new Date(tx.date+"T12:00:00");d.setMonth(d.getMonth()+i);
+        const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+        let instDD="";
+        if(tx.dueDate){const dd=new Date(tx.dueDate+"T12:00:00");dd.setMonth(dd.getMonth()+i);instDD=dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0")}
+        const mainId=uid();
+        // amount is PER installment (change #10)
+        batch.push({id:mainId,accountId:tx.accountId,date:ds,description:tx.description,category:tx.category,amount:tx.amount,type:tx.type,dueDate:instDD,installments:1,isRecurring:false,paid:false,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount,toAccountId:tx.toAccountId||""});
+        // Mirror for transfers
+        if(tx.type==="transfer"&&tx.toAccountId){
+          batch.push({id:uid(),accountId:tx.toAccountId,date:ds,description:tx.description,category:"Finanças > Transferência",amount:tx.amount,type:"transfer_in",fromAccountId:tx.accountId,installments:1,isRecurring:false,dueDate:instDD,paid:false,_mirrorOf:mainId,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount});
+        }
+      }
+    } else {
+      const mainId=uid();
+      batch.push({id:mainId,...tx,paid:tx.paid||false,groupId:null,instNum:null,instTotal:null});
+      if(tx.type==="transfer"&&tx.toAccountId){
+        batch.push({id:uid(),accountId:tx.toAccountId,date:tx.date,description:tx.description,category:"Finanças > Transferência",amount:tx.amount,type:"transfer_in",fromAccountId:tx.accountId,installments:1,isRecurring:tx.isRecurring||false,dueDate:tx.dueDate||"",paid:tx.paid||false,_mirrorOf:mainId});
+      }
+    }
+    setTxs(p=>[...p,...batch].sort((a,b)=>a.date.localeCompare(b.date)));setModal(null);
+  },[]);
+
+  // Edit: update both sides of transfer (#7)
+  const updateTx=useCallback((id,data)=>{
+    setTxs(p=>{
+      const orig=p.find(t=>t.id===id);
+      let updated=p.map(t=>t.id===id?{...t,...data}:t);
+      // If it's a transfer, update the mirror too
+      if(orig){
+        if(orig.type==="transfer"||orig.type==="transfer_in"){
+          const mirrorId=orig.type==="transfer"?p.find(t=>t._mirrorOf===id)?.id:orig._mirrorOf;
+          if(mirrorId){
+            updated=updated.map(t=>t.id===mirrorId?{...t,description:data.description||t.description,amount:data.amount!==undefined?data.amount:t.amount,date:data.date||t.date,category:data.category?data.category:t.category,dueDate:data.dueDate!==undefined?data.dueDate:t.dueDate,paid:data.paid!==undefined?data.paid:t.paid}:t);
+          }
+        }
+      }
+      return updated.sort((a,b)=>a.date.localeCompare(b.date));
+    });
+    setModal(null);setEditItem(null);
+  },[]);
+
+  const moveTxToAccount=useCallback((id,nid)=>{setTxs(p=>p.map(t=>t.id===id?{...t,accountId:nid}:t));setModal(null);setEditItem(null)},[]);
+  const togglePaid=useCallback((id)=>{setTxs(p=>p.map(t=>t.id===id?{...t,paid:!t.paid}:t))},[]);
+  const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>p.map(t=>{if(t.id!==id)return t;const pm=t.paidMonths?[...t.paidMonths]:[];if(pm.includes(mk))return{...t,paidMonths:pm.filter(x=>x!==mk)};return{...t,paidMonths:[...pm,mk]}}))},[]);
+  const deleteTx=useCallback((id)=>{setTxs(prev=>{const t=prev.find(x=>x.id===id);if(!t)return prev;if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);return prev.filter(x=>x.id!==id)})},[]);
+
+  /* Per-account */
+  const getMonthTxs=useCallback((acctId)=>{
+    const acct=accounts.find(a=>a.id===acctId);const raw=txs.filter(t=>t.accountId===acctId);
+    if(!acct||acct.type==="bank")return raw.filter(t=>t.date.startsWith(mKey));
+    const items=[];
+    raw.forEach(t=>{
+      if(t.type==="transfer_in"){if(t.date.startsWith(mKey))items.push(t);return}
+      const ref=t.dueDate||t.date;
+      if(t.isRecurring){const txD=new Date((t.dueDate||t.date)+"T12:00:00");const eom=new Date(month.y,month.m+1,0);if(txD<=eom){const isPd=(t.paidMonths||[]).includes(mKey);items.push({...t,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd})}}
+      else{if(ref.startsWith(mKey))items.push(t)}
+    });
+    return items.sort((a,b)=>a.date.localeCompare(b.date));
+  },[txs,accounts,mKey,month]);
+
+  const getBankBal=useCallback((id)=>txs.filter(t=>t.accountId===id).reduce((s,t)=>{if(t.type==="income"||t.type==="transfer_in")return s+t.amount;if(t.type==="expense"||t.type==="transfer")return s-t.amount;return s},0),[txs]);
+  const getBankPrev=useCallback((id)=>{const c=mKey+"-01";return txs.filter(t=>t.accountId===id&&t.date<c).reduce((s,t)=>{if(t.type==="income"||t.type==="transfer_in")return s+t.amount;if(t.type==="expense"||t.type==="transfer")return s-t.amount;return s},0)},[txs,mKey]);
+
+  /* ─── Search ─── */
+  const searchResults=useMemo(()=>{
+    if(!searchQ||searchQ.length<2)return[];
+    const q=searchQ.toLowerCase();
+    return txs.filter(t=>t.description?.toLowerCase().includes(q)||t.category?.toLowerCase().includes(q)).slice(0,30);
+  },[txs,searchQ]);
+
+  /* ═══ NO PROFILE ═══ */
+  if(!curProfileId||!activeProfile)return(
+    <div style={ST.app}>
+      <div style={{padding:"48px 24px",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:16}}>👋</div>
+        <h1 style={{fontSize:24,fontWeight:700,marginBottom:8}}>Bem-vindo ao Finanças</h1>
+        <p style={{color:"#94a3b8",marginBottom:32,lineHeight:1.6}}>Crie um perfil para começar.</p>
+        {profiles.length>0&&<div style={{marginBottom:28}}><p style={{color:"#64748b",fontSize:13,marginBottom:12}}>Perfis existentes:</p>
+          {profiles.map(p=><button key={p.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 24px",border:"1.5px solid "+p.color,borderRadius:12,background:"transparent",color:p.color,cursor:"pointer",fontSize:15,fontWeight:600,margin:"8px auto"}} onClick={()=>setCurProfileId(p.id)}><IcoUser/> {p.name}</button>)}
+        </div>}
+        <button style={{background:"linear-gradient(135deg,#5eead4,#2dd4bf)",color:"#0c0a1a",border:"none",borderRadius:16,padding:"14px 28px",fontSize:15,fontWeight:700,cursor:"pointer"}} onClick={()=>setModal("newProfile")}><IcoPlus/> Novo Perfil</button>
+      </div>
+      <Modal open={modal==="newProfile"} onClose={()=>setModal(null)} title="Novo Perfil"><ProfileForm onSubmit={addProfile}/></Modal>
+    </div>
+  );
+
+  /* ═══ SEARCH VIEW ═══ */
+  if(searchOpen)return(
+    <div style={ST.app}>
+      <div style={{padding:"16px",display:"flex",gap:8,alignItems:"center"}}>
+        <button style={ST.navBtn} onClick={()=>{setSearchOpen(false);setSearchQ("")}}><IcoBack/></button>
+        <input style={{...ST.input,flex:1}} placeholder="Buscar transações..." value={searchQ} onChange={e=>setSearchQ(e.target.value)} autoFocus/>
+      </div>
+      <div style={{padding:"0 16px"}}>
+        {searchQ.length<2&&<p style={ST.empty}>Digite pelo menos 2 caracteres</p>}
+        {searchQ.length>=2&&searchResults.length===0&&<p style={ST.empty}>Nenhum resultado</p>}
+        {searchResults.map((t,i)=>{
+          const acct=accounts.find(a=>a.id===t.accountId);
+          const isIn=t.type==="income"||t.type==="transfer_in";
+          const dot=t.type==="transfer"||t.type==="transfer_in"?"#818cf8":isIn?"#5eead4":"#f87171";
+          return <div key={t.id+i} style={{...ST.txItem,cursor:"pointer"}} onClick={()=>{setSelAcctId(t.accountId);setSearchOpen(false);setSearchQ("");setViewStack(["home","detail"])}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:dot,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:2}}>
+                {t.date.split("-").reverse().join("/")} · {t.category} {acct&&<span style={{color:acct.color}}>· {acct.name}</span>}
+              </div>
+            </div>
+            <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:dot}}>{isIn?"+":"−"}{fmt(t.amount)}</div>
+          </div>
+        })}
+      </div>
+    </div>
+  );
+
+  /* ═══ HOME ═══ */
+  if(view==="home")return(
+    <div style={ST.app}>
+      <header style={ST.header}>
+        <button style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+activeProfile.color,borderRadius:20,background:"transparent",color:activeProfile.color,cursor:"pointer",fontSize:14,fontWeight:600}} onClick={()=>setProfMenuOpen(!profMenuOpen)}><IcoUser/> {activeProfile.name}</button>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button>
+          <button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button>
+          <span style={ST.monthLbl}>{MONTHS[month.m].slice(0,3)} {month.y}</span>
+          <button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button>
+        </div>
+      </header>
+
+      {profMenuOpen&&<div style={{background:"#1e1b3a",border:"1px solid #2d2a4a",borderRadius:12,margin:"0 16px 12px",padding:8}}>
+        {profiles.map(p=><button key={p.id} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,fontWeight:500,color:p.id===curProfileId?"#fff":p.color}} onClick={()=>{setCurProfileId(p.id);setProfMenuOpen(false)}}><IcoUser/> {p.name}{p.id===curProfileId?" ✓":""}</button>)}
+        <div style={{borderTop:"1px solid #2d2a4a",margin:"6px 0"}}/>
+        <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:"#5eead4"}} onClick={()=>{setModal("newProfile");setProfMenuOpen(false)}}><IcoPlus/> Novo Perfil</button>
+        <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:"#f87171"}} onClick={()=>deleteProfile(curProfileId)}><IcoTrash/> Excluir Perfil</button>
+      </div>}
+
+      {(bankAccts.length>0||cardAccts.length>0)&&(()=>{
+        const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);
+        const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type!=="transfer_in").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-pd)},0);
+        const net=tB-tC;
+        return <div style={{margin:"0 16px 14px",padding:16,background:"linear-gradient(135deg,#13102a,#1a1535)",borderRadius:14,border:"1px solid #2d2a4a"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:"#94a3b8",textTransform:"uppercase"}}>Saldo Total</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:net>=0?"#5eead4":"#f87171"}}>{fmt(net)}</span></div>
+          <div style={{display:"flex",gap:16,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:"#5eead4"}}>Contas: {fmt(tB)}</span><span style={{color:"#fbbf24"}}>Cartões: -{fmt(tC)}</span></div>
+        </div>
+      })()}
+
+      <div style={ST.sec}><div style={ST.secH}><span style={{color:"#5eead4",display:"flex"}}><IcoBank/></span><h2 style={{fontSize:16,fontWeight:700,flex:1}}>Contas Bancárias</h2><button style={ST.addSm} onClick={()=>setModal("newBank")}><IcoPlus/></button></div>
+        {bankAccts.length===0&&<p style={ST.empty}>Toque + para adicionar</p>}
+        {bankAccts.map(a=>{const bal=getBankBal(a.id);const mT=getMonthTxs(a.id);const inc=mT.filter(t=>t.type==="income"||t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);const exp=mT.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);
+          return <div key={a.id} style={{...ST.aCard,borderLeftColor:a.color}} onClick={()=>{setSelAcctId(a.id);pushView("detail")}}>
+            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:bal>=0?"#5eead4":"#f87171"}}>{fmt(bal)}</span></div>
+            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:"#5eead4"}}>+{fmt(inc)}</span><span style={{color:"#f87171"}}>−{fmt(exp)}</span></div>
+          </div>})}
+      </div>
+
+      <div style={ST.sec}><div style={ST.secH}><span style={{color:"#fbbf24",display:"flex"}}><IcoCard/></span><h2 style={{fontSize:16,fontWeight:700,flex:1}}>Cartões de Crédito</h2><button style={ST.addSm} onClick={()=>setModal("newCard")}><IcoPlus/></button></div>
+        {cardAccts.length===0&&<p style={ST.empty}>Toque + para adicionar</p>}
+        {cardAccts.map(a=>{const mT=getMonthTxs(a.id);const sp=mT.filter(t=>t.type!=="transfer_in").reduce((s,t)=>s+t.amount,0);const pd=mT.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);
+          return <div key={a.id} style={{...ST.aCard,borderLeftColor:a.color}} onClick={()=>{setSelAcctId(a.id);pushView("detail")}}>
+            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{fmt(sp)}</span></div>
+            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:"#5eead4"}}>Pago: {fmt(pd)}</span><span style={{color:sp-pd>0?"#f87171":"#64748b"}}>Resta: {fmt(Math.max(0,sp-pd))}</span></div>
+          </div>})}
+      </div>
+
+      <Modal open={modal==="newProfile"} onClose={()=>setModal(null)} title="Novo Perfil"><ProfileForm onSubmit={addProfile}/></Modal>
+      <Modal open={modal==="newBank"} onClose={()=>setModal(null)} title="Nova Conta"><AcctForm type="bank" usedColors={accounts.map(a=>a.color)} onSubmit={addAccount}/></Modal>
+      <Modal open={modal==="newCard"} onClose={()=>setModal(null)} title="Novo Cartão"><AcctForm type="card" usedColors={accounts.map(a=>a.color)} onSubmit={addAccount}/></Modal>
+    </div>
+  );
+
+  /* ═══ DETAIL ═══ */
+  const isBank=curAcct?curAcct.type==="bank":true;
+  const monthTxs=curAcct?getMonthTxs(selAcctId):[];
+  const prevBal=isBank?getBankPrev(selAcctId):0;
+  const mInc=monthTxs.filter(t=>t.type==="income"||t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);
+  const mExp=monthTxs.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);
+  const cSp=!isBank?monthTxs.filter(t=>t.type!=="transfer_in").reduce((s,t)=>s+t.amount,0):0;
+  const cPd=!isBank?monthTxs.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0):0;
+  const moveTargets=accounts.filter(a=>a.type===(curAcct?curAcct.type:"bank")&&a.id!==selAcctId);
+
+  return(
+    <div style={ST.app}>
+      <header style={{...ST.header,gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+          <button style={ST.navBtn} onClick={popView}><IcoBack/></button>
+          <h1 style={{fontSize:17,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:curAcct?.color}}>{isBank?"🏦":"💳"}</span> {curAcct?.name}</h1>
+        </div>
+        <button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button>
+        <button style={{...ST.navBtn,color:"#f87171"}} onClick={()=>deleteAccount(selAcctId)}><IcoTrash/></button>
+      </header>
+
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:"0 16px 12px"}}>
+        <button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button>
+        <span style={ST.monthLbl}>{MONTHS[month.m]} {month.y}</span>
+        <button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button>
+      </div>
+
+      <div style={{display:"flex",gap:6,padding:"0 16px 10px",flexWrap:"wrap"}}>
+        {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color="#5eead4"/><SumCard label="Saídas" value={fmt(mExp)} color="#f87171"/><SumCard label="Saldo Final" value={fmt(prevBal+mInc-mExp)} color={curAcct?.color||"#818cf8"}/></>
+        :<><SumCard label="Fatura" value={fmt(cSp)} color="#fbbf24"/><SumCard label="Pago" value={fmt(cPd)} color="#5eead4"/><SumCard label="Restante" value={fmt(Math.max(0,cSp-cPd))} color={cSp-cPd>0?"#f87171":"#5eead4"}/></>}
+      </div>
+
+      {isBank&&prevBal!==0&&<div style={{fontSize:12,color:"#94a3b8",padding:"0 20px 10px",fontFamily:"'JetBrains Mono',monospace"}}>Saldo anterior: <strong>{fmt(prevBal)}</strong></div>}
+
+      <div style={{display:"flex",flexDirection:"column",gap:2,padding:"0 16px"}}>
+        {monthTxs.length===0&&<p style={ST.empty}>Nenhuma movimentação neste mês</p>}
+        {monthTxs.map((t,i)=>{
+          let running=null;
+          if(isBank){running=prevBal+monthTxs.slice(0,i+1).reduce((s,x)=>{if(x.type==="income"||x.type==="transfer_in")return s+x.amount;if(x.type==="expense"||x.type==="transfer")return s-x.amount;return s},0)}
+          const isIn=t.type==="income"||t.type==="transfer_in";
+          const isTr=t.type==="transfer"||t.type==="transfer_in";
+          const dot=isTr?"#818cf8":isIn?"#5eead4":(isBank?"#f87171":"#fbbf24");
+          const destA=t.toAccountId?accounts.find(a=>a.id===t.toAccountId):null;
+          const srcA=t.fromAccountId?accounts.find(a=>a.id===t.fromAccountId):null;
+          const isPaid=t._virtual&&t.isRecurring?t._recurPaid:t.paid;
+
+          return <div key={t.id+"-"+i} style={{...ST.txItem,opacity:isPaid?0.55:1}}>
+            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?"#5eead4":"#475569"),background:isPaid?"#0d2a2a":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:"#5eead4",padding:0}} onClick={()=>{if(t._virtual&&t.isRecurring)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
+            <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:dot,flexShrink:0}}/>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontSize:13,fontWeight:500,display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</span>
+                  {t.instNum&&<span style={ST.badge}>{t.instNum}/{t.instTotal} <span style={{color:"#64748b",marginLeft:2}}>({fmt(t.instUnitAmount*t.instTotal)})</span></span>}
+                  {t.isRecurring&&<span style={{...ST.badge,background:"#312e81",color:"#a78bfa"}}>Rec</span>}
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:2}}>
+                  {t.date.split("-").reverse().join("/")} · {t.category}
+                  {destA&&<span style={{color:destA.color}}> → {destA.name}</span>}
+                  {srcA&&<span style={{color:srcA.color}}> ← {srcA.name}</span>}
+                  {t.dueDate&&(" · Venc: "+t.dueDate.split("-").reverse().join("/"))}
+                </div>
+              </div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:dot,textDecoration:isPaid?"line-through":"none"}}>{isIn?"+":"−"} {fmt(t.amount)}</div>
+              {running!==null&&<div style={{fontSize:9,color:"#64748b",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>Saldo: {fmt(running)}</div>}
+              <div style={{display:"flex",gap:3,justifyContent:"flex-end",marginTop:3}}>
+                {moveTargets.length>0&&<button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("moveTx")}}><IcoMove/></button>}
+                <button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("editTx")}}><IcoEdit/></button>
+                {!t._virtual&&<button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>deleteTx(t.id)}><IcoTrash/></button>}
+              </div>
+            </div>
+          </div>
+        })}
+      </div>
+
+      <button style={ST.fab} onClick={()=>setModal("addTx")}><IcoPlus/> Nova Transação</button>
+
+      <Modal open={modal==="addTx"||modal==="editTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={modal==="editTx"?"Editar Transação":"Nova Transação"}>
+        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} onSubmit={d=>editItem?updateTx(editItem.id,d):addTx(d)}/>
+      </Modal>
+
+      <Modal open={modal==="moveTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={"Mover para "+(isBank?"outra conta":"outro cartão")}>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{color:"#94a3b8",fontSize:13}}>Transação: <strong style={{color:"#e2e8f0"}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""}</p>
+          {moveTargets.map(a=>{const op=profiles.find(p=>p.id===a.profileId);return <button key={a.id} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid "+a.color,borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}} onClick={()=>moveTxToAccount(editItem.id,a.id)}><span style={{color:a.color}}>{a.type==="bank"?"🏦":"💳"}</span>{a.name}{op&&<span style={{fontSize:11,color:"#64748b",marginLeft:"auto"}}>({op.name})</span>}</button>})}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ─── Profile Form ─── */
+function ProfileForm({onSubmit}){
+  const[name,setName]=useState("");const[color,setColor]=useState(PROF_COLORS[0]);
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <Field label="Nome do Perfil"><input style={ST.input} placeholder="Ex: Pessoal" value={name} onChange={e=>setName(e.target.value)}/></Field>
+    <Field label="Cor"><div style={{display:"flex",gap:8}}>{PROF_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:36,height:36,borderRadius:"50%",background:c,border:color===c?"3px solid #fff":"3px solid transparent",cursor:"pointer"}}/>)}</div></Field>
+    <button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color})}>Criar Perfil</button>
+  </div>
+}
+
+/* ─── Account Form ─── */
+function AcctForm({type,usedColors,onSubmit}){
+  const[name,setName]=useState("");const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));const[color,setColor]=useState(avail[0]||ACCT_COLORS[0]);
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <Field label="Nome"><input style={ST.input} placeholder={type==="bank"?"Ex: Nubank":"Ex: Visa Platinum"} value={name} onChange={e=>setName(e.target.value)}/></Field>
+    <Field label="Cor"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{ACCT_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid #fff":"3px solid transparent",cursor:"pointer"}}/>)}</div></Field>
+    <button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type})}>Criar {type==="bank"?"Conta":"Cartão"}</button>
+  </div>
+}
+
+/* ─── Transaction Form (with all new features) ─── */
+function TxForm({initial,account,allAccounts,profiles,descriptions,onSubmit}){
+  const isBank=account?.type==="bank";
+  const[form,setForm]=useState(()=>{
+    if(initial)return{...initial,amount:String(initial.amount)};
+    return{accountId:account?.id||"",date:td(),description:"",category:"Outros > Outros",amount:"",type:isBank?"expense":"expense",toAccountId:"",dueDate:"",installments:1,isRecurring:false,paid:false};
+  });
+  const[tried,setTried]=useState(false); // validation
+  const set=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const others=allAccounts.filter(a=>a.id!==account?.id);
+  const getPName=(acct)=>{const pr=(profiles||[]).find(p=>p.id===acct.profileId);return pr?pr.name:""};
+
+  const errors={};
+  if(tried){
+    if(!form.description)errors.description="Campo obrigatório";
+    if(!form.amount)errors.amount="Campo obrigatório";
+    if(form.type==="transfer"&&!form.toAccountId)errors.toAccountId="Selecione um destino";
+  }
+  const hasErrors=Object.keys(errors).length>0;
+
+  const handleSubmit=()=>{
+    setTried(true);
+    if(!form.description||!form.amount||(form.type==="transfer"&&!form.toAccountId))return;
+    onSubmit({...form,amount:parseFloat(form.amount)||0,installments:parseInt(form.installments)||1,category:form.type==="transfer"?"Finanças > Transferência":form.category});
+  };
+
+  // Show installment and recurring for transfers too (#6)
+  const showInstRec=isBank?form.type!=="income":true;
+
+  return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    {isBank&&<div style={{display:"flex",gap:6}}>
+      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:"#5eead4",color:"#5eead4",background:"#0d2a2a"}:{})}} onClick={()=>set("type","income")}><IcoUp/> Entrada</button>
+      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:"#f87171",color:"#f87171",background:"#2a0d0d"}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Saída</button>
+      <button style={{...ST.typeBtn,...(form.type==="transfer"?{borderColor:"#818cf8",color:"#818cf8",background:"#1e1b3a"}:{})}} onClick={()=>set("type","transfer")}><IcoTransfer/> Transf.</button>
+    </div>}
+    {!isBank&&<p style={{color:"#94a3b8",fontSize:13}}>Despesa no cartão <strong style={{color:account?.color}}>{account?.name}</strong></p>}
+
+    {form.type==="transfer"&&<Field label="Destino" error={errors.toAccountId}><select style={ST.input} className={errors.toAccountId?"field-error":""} value={form.toAccountId} onChange={e=>set("toAccountId",e.target.value)}>
+      <option value="">Selecione...</option>{others.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({getPName(a)})</option>)}
+    </select></Field>}
+
+    <Field label="Data"><input type="date" style={ST.input} value={form.date} onChange={e=>set("date",e.target.value)}/></Field>
+    <Field label="Descrição" error={errors.description}>
+      <DescInput style={ST.input} className={errors.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} suggestions={descriptions}/>
+    </Field>
+    <Field label={initial?.instNum?("Valor da parcela "+initial.instNum+"/"+initial.instTotal+" (R$)"):"Valor "+(form.installments>1?"da parcela ":"")+"(R$)"} error={errors.amount}>
+      <input type="number" step="0.01" style={ST.input} className={errors.amount?"field-error":""} placeholder="0,00" value={form.amount} onChange={e=>set("amount",e.target.value)}/>
+    </Field>
+    <Field label="Categoria"><CatSelect value={form.category} onChange={v=>set("category",v)} style={ST.input}/></Field>
+
+    {!isBank&&<Field label="Data de Vencimento"><input type="date" style={ST.input} value={form.dueDate} onChange={e=>set("dueDate",e.target.value)}/></Field>}
+
+    {/* Installments & Recurring - also for transfers (#6) */}
+    {showInstRec&&!initial&&<div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
+      <Field label="Parcelas">
+        <InstStepper value={form.installments} onChange={v=>set("installments",v)} disabled={form.isRecurring}/>
+      </Field>
+      {form.installments>1&&<div style={{padding:"8px 0",fontSize:13,color:"#94a3b8",fontFamily:"'JetBrains Mono',monospace"}}>
+        Total: {fmt((parseFloat(form.amount)||0)*form.installments)}
+      </div>}
+      <Field label="Recorrente"><label style={{display:"flex",alignItems:"center",gap:8,color:"#e2e8f0",fontSize:14,padding:"8px 0",cursor:"pointer"}}><input type="checkbox" checked={form.isRecurring} onChange={e=>{set("isRecurring",e.target.checked);if(e.target.checked)set("installments",1)}} style={{width:18,height:18,accentColor:"#5eead4"}}/> Mensal</label></Field>
+    </div>}
+    {initial&&initial.isRecurring&&<Field label="Recorrente"><label style={{display:"flex",alignItems:"center",gap:8,color:"#e2e8f0",fontSize:14,padding:"8px 0",cursor:"pointer"}}><input type="checkbox" checked={form.isRecurring} onChange={e=>set("isRecurring",e.target.checked)} style={{width:18,height:18,accentColor:"#5eead4"}}/> Mensal</label></Field>}
+
+    <Field label="Status"><label style={{display:"flex",alignItems:"center",gap:8,color:"#e2e8f0",fontSize:14,padding:"8px 0",cursor:"pointer"}}><input type="checkbox" checked={form.paid||false} onChange={e=>set("paid",e.target.checked)} style={{width:18,height:18,accentColor:"#5eead4"}}/> Pago</label></Field>
+
+    <button style={ST.submitBtn} onClick={handleSubmit}>{initial?"Salvar":"Adicionar"}</button>
+  </div>
+}
+
+/* ─── Styles ─── */
+const ST={
+  app:{fontFamily:"'DM Sans',sans-serif",background:"#0c0a1a",color:"#e2e8f0",minHeight:"100vh",maxWidth:520,margin:"0 auto",paddingBottom:80},
+  header:{padding:"16px 16px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"},
+  navBtn:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",padding:4,display:"flex",borderRadius:6},
+  monthLbl:{fontSize:14,fontWeight:600,color:"#e2e8f0",minWidth:100,textAlign:"center"},
+  sec:{padding:"4px 16px 14px"},
+  secH:{display:"flex",alignItems:"center",gap:10,marginBottom:10},
+  addSm:{background:"#1e1b3a",border:"1px solid #2d2a4a",color:"#5eead4",width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"},
+  aCard:{background:"#13102a",borderRadius:10,padding:"14px 16px",marginBottom:8,cursor:"pointer",borderLeft:"3px solid #5eead4"},
+  aRow:{display:"flex",justifyContent:"space-between",alignItems:"center"},
+  txItem:{display:"flex",alignItems:"center",padding:"10px 8px",borderRadius:8,background:"#13102a",marginBottom:3,gap:6,transition:"opacity .2s"},
+  badge:{fontSize:9,background:"#1e1b3a",color:"#94a3b8",padding:"2px 5px",borderRadius:4,fontWeight:600,display:"inline-flex",alignItems:"center",gap:2,whiteSpace:"nowrap",flexShrink:0},
+  sBtn:{background:"none",border:"none",color:"#64748b",cursor:"pointer",padding:3,borderRadius:4,display:"flex"},
+  empty:{textAlign:"center",color:"#475569",padding:28,fontSize:14},
+  fab:{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#5eead4,#2dd4bf)",color:"#0c0a1a",border:"none",borderRadius:28,padding:"14px 24px",fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 24px rgba(94,234,212,0.3)",zIndex:10},
+  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:100,backdropFilter:"blur(4px)"},
+  modal:{background:"#13102a",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:520,maxHeight:"85vh",overflow:"auto",padding:"0 20px 24px"},
+  modalH:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 0 10px",position:"sticky",top:0,background:"#13102a",zIndex:1},
+  iBtn:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",padding:4,display:"flex",borderRadius:6},
+  lbl:{fontSize:11,fontWeight:600,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px"},
+  input:{background:"#1e1b3a",border:"1px solid #2d2a4a",borderRadius:10,padding:"11px 13px",color:"#e2e8f0",fontSize:15,width:"100%"},
+  typeBtn:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"10px 0",border:"1px solid #2d2a4a",background:"#1e1b3a",color:"#64748b",borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all .2s"},
+  submitBtn:{background:"linear-gradient(135deg,#5eead4,#2dd4bf)",color:"#0c0a1a",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4},
+  stepBtn:{display:"flex",alignItems:"center",justifyContent:"center",width:36,height:44,background:"none",border:"none",color:"#5eead4",cursor:"pointer"},
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
