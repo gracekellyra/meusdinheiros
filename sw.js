@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v1';
+const CACHE_NAME = 'financas-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './icon-512.png'
 ];
 
+// Install: cache assets and activate immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
@@ -14,6 +15,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
+// Activate: delete ALL old caches and take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -23,16 +25,19 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Fetch: NETWORK FIRST — always try fresh, cache only for offline
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (response.ok && event.request.method === 'GET') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
