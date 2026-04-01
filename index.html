@@ -47,7 +47,7 @@ const CAT_TREE = {
   "Educação":["Escola/Faculdade","Curso online","Livros","Material escolar","Outros"],
   "Lazer":["Cinema/Teatro","Viagem","Streaming","Jogos","Hobby","Bares","Outros"],
   "Vestuário":["Roupas","Calçados","Acessórios","Outros"],
-  "Renda":["Salário","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Outros"],
+  "Renda":["Salário","Comissão","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Estorno","Reembolso","13º Salário","Férias","Dividendos","Outros"],
   "Finanças":["Transferência","Empréstimo","Juros","Tarifas bancárias","Outros"],
   "Compras":["Eletrônicos","Móveis","Eletrodomésticos","Presentes","Outros"],
   "Serviços":["Assinaturas","Celular","Seguros","Contabilidade","Outros"],
@@ -234,18 +234,66 @@ function App(){
   const moveTxToAccount=useCallback((id,nid)=>{setTxs(p=>p.map(t=>t.id===id?{...t,accountId:nid}:t));setModal(null);setEditItem(null)},[]);
   const togglePaid=useCallback((id)=>{setTxs(p=>p.map(t=>t.id===id?{...t,paid:!t.paid}:t))},[]);
   const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>p.map(t=>{if(t.id!==id)return t;const pm=t.paidMonths?[...t.paidMonths]:[];if(pm.includes(mk))return{...t,paidMonths:pm.filter(x=>x!==mk)};return{...t,paidMonths:[...pm,mk]}}))},[]);
-  const deleteTx=useCallback((id)=>{setTxs(prev=>{const t=prev.find(x=>x.id===id);if(!t)return prev;if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);return prev.filter(x=>x.id!==id)})},[]);
+  const deleteTx=useCallback((id,opts)=>{
+    const deleteGroup=opts?.group;
+    const recurMode=opts?.recurMode; // "this"|"forward"|"all"
+    setTxs(prev=>{
+      const t=prev.find(x=>x.id===id);if(!t)return prev;
+      // Recurring deletion modes
+      if(recurMode&&t.isRecurring){
+        if(recurMode==="all"){
+          // Delete original + mirrors
+          return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);
+        }
+        if(recurMode==="this"){
+          // Add this month to excluded list
+          const excl=t.excludedMonths?[...t.excludedMonths]:[];
+          if(!excl.includes(mKey))excl.push(mKey);
+          return prev.map(x=>x.id===id?{...x,excludedMonths:excl}:x);
+        }
+        if(recurMode==="forward"){
+          // Set endDate to end of previous month
+          const prevM=new Date(month.y,month.m,0);
+          const endStr=prevM.getFullYear()+"-"+String(prevM.getMonth()+1).padStart(2,"0")+"-"+String(prevM.getDate()).padStart(2,"0");
+          return prev.map(x=>x.id===id?{...x,endDate:endStr}:x);
+        }
+      }
+      // Delete entire installment group
+      if(deleteGroup&&t.groupId){return prev.filter(x=>x.groupId!==t.groupId)}
+      // Transfer: delete both sides
+      if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);
+      if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);
+      return prev.filter(x=>x.id!==id);
+    })
+  },[mKey,month]);
 
   /* Per-account */
   const getMonthTxs=useCallback((acctId)=>{
     const acct=accounts.find(a=>a.id===acctId);const raw=txs.filter(t=>t.accountId===acctId);
-    if(!acct||acct.type==="bank")return raw.filter(t=>t.date.startsWith(mKey));
+    const isCard=acct&&acct.type==="card";
     const items=[];
     raw.forEach(t=>{
-      if(t.type==="transfer_in"){if(t.date.startsWith(mKey))items.push(t);return}
-      const ref=t.dueDate||t.date;
-      if(t.isRecurring){const txD=new Date((t.dueDate||t.date)+"T12:00:00");const eom=new Date(month.y,month.m+1,0);if(txD<=eom){const isPd=(t.paidMonths||[]).includes(mKey);items.push({...t,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd})}}
-      else{if(ref.startsWith(mKey))items.push(t)}
+      // For recurring: expand into every month from creation onwards
+      if(t.isRecurring){
+        const txD=new Date((isCard?(t.dueDate||t.date):t.date)+"T12:00:00");
+        const eom=new Date(month.y,month.m+1,0);
+        // Check endDate
+        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(eom>ed)return}
+        // Check excludedMonths
+        if(t.excludedMonths&&t.excludedMonths.includes(mKey))return;
+        if(txD<=eom){
+          const isPd=(t.paidMonths||[]).includes(mKey);
+          items.push({...t,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd});
+        }
+        return;
+      }
+      // Non-recurring: filter by appropriate date
+      if(isCard){
+        const ref=t.dueDate||t.date;
+        if(ref.startsWith(mKey))items.push(t);
+      } else {
+        if(t.date.startsWith(mKey))items.push(t);
+      }
     });
     return items.sort((a,b)=>a.date.localeCompare(b.date));
   },[txs,accounts,mKey,month]);
@@ -427,9 +475,16 @@ function App(){
               <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:dot,textDecoration:isPaid?"line-through":"none"}}>{isIn?"+":"−"} {fmt(t.amount)}</div>
               {running!==null&&<div style={{fontSize:9,color:"#64748b",fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>Saldo: {fmt(running)}</div>}
               <div style={{display:"flex",gap:3,justifyContent:"flex-end",marginTop:3}}>
-                {moveTargets.length>0&&<button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("moveTx")}}><IcoMove/></button>}
+                {moveTargets.length>0&&!t._virtual&&<button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("moveTx")}}><IcoMove/></button>}
                 <button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("editTx")}}><IcoEdit/></button>
-                {!t._virtual&&<button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>deleteTx(t.id)}><IcoTrash/></button>}
+                {/* Delete: recurring virtual → delete original; installment → modal; normal → direct */}
+                {t._virtual&&t.isRecurring?
+                  <button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>{setEditItem(t);setModal("delRecurring")}}><IcoTrash/></button>
+                : t.groupId?
+                  <button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>{setEditItem(t);setModal("delInstall")}}><IcoTrash/></button>
+                :
+                  <button style={{...ST.sBtn,color:"#f87171"}} onClick={()=>deleteTx(t.id)}><IcoTrash/></button>
+                }
               </div>
             </div>
           </div>
@@ -446,6 +501,44 @@ function App(){
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <p style={{color:"#94a3b8",fontSize:13}}>Transação: <strong style={{color:"#e2e8f0"}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""}</p>
           {moveTargets.map(a=>{const op=profiles.find(p=>p.id===a.profileId);return <button key={a.id} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid "+a.color,borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}} onClick={()=>moveTxToAccount(editItem.id,a.id)}><span style={{color:a.color}}>{a.type==="bank"?"🏦":"💳"}</span>{a.name}{op&&<span style={{fontSize:11,color:"#64748b",marginLeft:"auto"}}>({op.name})</span>}</button>})}
+        </div>
+      </Modal>
+
+      {/* Delete installment modal */}
+      <Modal open={modal==="delInstall"} onClose={()=>{setModal(null);setEditItem(null)}} title="Excluir Parcela">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{color:"#94a3b8",fontSize:13}}>
+            <strong style={{color:"#e2e8f0"}}>{editItem?.description}</strong> — Parcela {editItem?.instNum}/{editItem?.instTotal} — {editItem?fmt(editItem.amount):""}
+          </p>
+          <button style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid #fbbf24",borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}}
+            onClick={()=>{deleteTx(editItem.id);setModal(null);setEditItem(null)}}>
+            <span style={{color:"#fbbf24"}}>1x</span> Excluir apenas esta parcela ({editItem?.instNum}/{editItem?.instTotal})
+          </button>
+          <button style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid #f87171",borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}}
+            onClick={()=>{deleteTx(editItem.id,{group:true});setModal(null);setEditItem(null)}}>
+            <span style={{color:"#f87171"}}>Todas</span> Excluir todas as {editItem?.instTotal} parcelas
+          </button>
+        </div>
+      </Modal>
+
+      {/* Delete recurring modal */}
+      <Modal open={modal==="delRecurring"} onClose={()=>{setModal(null);setEditItem(null)}} title="Excluir Recorrência">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{color:"#94a3b8",fontSize:13}}>
+            <strong style={{color:"#e2e8f0"}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""} / mês
+          </p>
+          <button style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid #fbbf24",borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}}
+            onClick={()=>{deleteTx(editItem.id,{recurMode:"this"});setModal(null);setEditItem(null)}}>
+            <span style={{color:"#fbbf24"}}>1x</span> Excluir apenas este mês ({MONTHS[month.m]})
+          </button>
+          <button style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid #fb923c",borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}}
+            onClick={()=>{deleteTx(editItem.id,{recurMode:"forward"});setModal(null);setEditItem(null)}}>
+            <span style={{color:"#fb923c"}}>→</span> Excluir daqui para frente (a partir de {MONTHS[month.m]})
+          </button>
+          <button style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:"#1e1b3a",border:"1.5px solid #f87171",borderRadius:10,color:"#e2e8f0",fontSize:14,fontWeight:500,cursor:"pointer"}}
+            onClick={()=>{deleteTx(editItem.id,{recurMode:"all"});setModal(null);setEditItem(null)}}>
+            <span style={{color:"#f87171"}}>✕</span> Excluir desde a primeira (todos os meses)
+          </button>
         </div>
       </Modal>
     </div>
