@@ -312,8 +312,60 @@ function App(){
     return items.sort((a,b)=>a.date.localeCompare(b.date));
   },[txs,accounts,mKey,month]);
 
-  const getBankBal=useCallback((id)=>txs.filter(t=>t.accountId===id).reduce((s,t)=>{if(t.type==="income"||t.type==="transfer_in")return s+t.amount;if(t.type==="expense"||t.type==="transfer")return s-t.amount;return s},0),[txs]);
-  const getBankPrev=useCallback((id)=>{const c=mKey+"-01";return txs.filter(t=>t.accountId===id&&t.date<c).reduce((s,t)=>{if(t.type==="income"||t.type==="transfer_in")return s+t.amount;if(t.type==="expense"||t.type==="transfer")return s-t.amount;return s},0)},[txs,mKey]);
+  const getBankBal=useCallback((id)=>{
+    const now=new Date();
+    const nowMonthStart=new Date(now.getFullYear(),now.getMonth()+1,1); // include current month
+    return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
+      const val=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;
+      if(val===0)return s;
+      if(t.isRecurring){
+        const start=new Date(t.date+"T12:00:00");
+        let endLimit=nowMonthStart;
+        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<start)return s;if(ed<nowMonthStart)endLimit=new Date(ed.getFullYear(),ed.getMonth()+1,1)}
+        let count=0;
+        const d=new Date(start.getFullYear(),start.getMonth(),1);
+        while(d<endLimit){
+          const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+          if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){count++}
+          d.setMonth(d.getMonth()+1);
+        }
+        return s+val*count;
+      }
+      return s+val;
+    },0);
+  },[txs]);
+  const getBankPrev=useCallback((id)=>{
+    const c=mKey+"-01";
+    const currentMonthStart=new Date(month.y,month.m,1);
+    return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
+      const val=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;
+      if(val===0)return s;
+      if(t.isRecurring){
+        // Count how many months this recurring tx appeared BEFORE current month
+        const start=new Date(t.date+"T12:00:00");
+        if(start>=currentMonthStart)return s; // hasn't started yet
+        // Check endDate
+        let endLimit=currentMonthStart;
+        if(t.endDate){
+          const ed=new Date(t.endDate+"T12:00:00");
+          if(ed<start)return s;
+          if(ed<currentMonthStart)endLimit=new Date(ed.getFullYear(),ed.getMonth()+1,1);
+        }
+        // Count months from start to min(endLimit, currentMonth), excluding excluded months
+        let count=0;
+        const d=new Date(start.getFullYear(),start.getMonth(),1);
+        while(d<endLimit){
+          const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+          if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){count++}
+          d.setMonth(d.getMonth()+1);
+        }
+        return s+val*count;
+      }
+      // Normal transaction: only if before current month
+      if(t.date<c)return s+val;
+      return s;
+    },0);
+  },[txs,mKey,month]);
 
   /* ─── Search ─── */
   const searchResults=useMemo(()=>{
