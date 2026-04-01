@@ -196,6 +196,7 @@ function App(){
 
   /* Account */
   const addAccount=(d)=>{setAccounts(p=>[...p,{id:uid(),profileId:curProfileId,...d}]);setModal(null)};
+  const updateAccount=(id,d)=>{setAccounts(p=>p.map(a=>a.id===id?{...a,...d}:a));setModal(null)};
   const deleteAccount=(id)=>{if(!confirm("Excluir conta e todas transações?"))return;setAccounts(p=>p.filter(a=>a.id!==id));setTxs(p=>p.filter(t=>t.accountId!==id&&t.toAccountId!==id));if(selAcctId===id)setViewStack(["home"])};
 
   /* ─── Transaction CRUD ─── */
@@ -313,15 +314,16 @@ function App(){
   },[txs,accounts,mKey,month]);
 
   const getBankBal=useCallback((id)=>{
-    const now=new Date();
-    const nowMonthStart=new Date(now.getFullYear(),now.getMonth()+1,1); // include current month
+    // Calculate balance up to END of viewed month (inclusive)
+    const viewedMonthEnd=new Date(month.y,month.m+1,1); // first of next month = end of viewed month
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
       const val=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;
       if(val===0)return s;
       if(t.isRecurring){
         const start=new Date(t.date+"T12:00:00");
-        let endLimit=nowMonthStart;
-        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<start)return s;if(ed<nowMonthStart)endLimit=new Date(ed.getFullYear(),ed.getMonth()+1,1)}
+        if(start>=viewedMonthEnd)return s;
+        let endLimit=viewedMonthEnd;
+        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<start)return s;if(ed<viewedMonthEnd)endLimit=new Date(ed.getFullYear(),ed.getMonth()+1,1)}
         let count=0;
         const d=new Date(start.getFullYear(),start.getMonth(),1);
         while(d<endLimit){
@@ -331,9 +333,11 @@ function App(){
         }
         return s+val*count;
       }
-      return s+val;
+      // Normal: only if date is before end of viewed month
+      if(t.date<mKey+"-32")return s+val;
+      return s;
     },0);
-  },[txs]);
+  },[txs,month,mKey]);
   const getBankPrev=useCallback((id)=>{
     const c=mKey+"-01";
     const currentMonthStart=new Date(month.y,month.m,1);
@@ -491,6 +495,7 @@ function App(){
           <h1 style={{fontSize:17,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:curAcct?.color}}>{isBank?"🏦":"💳"}</span> {curAcct?.name}</h1>
         </div>
         <button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button>
+        <button style={ST.navBtn} onClick={()=>setModal("editAcct")}><IcoEdit/></button>
         <button style={{...ST.navBtn,color:"#f87171"}} onClick={()=>deleteAccount(selAcctId)}><IcoTrash/></button>
       </header>
 
@@ -563,6 +568,10 @@ function App(){
         <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} onSubmit={d=>editItem?updateTx(editItem.id,d):addTx(d)}/>
       </Modal>
 
+      <Modal open={modal==="editAcct"} onClose={()=>setModal(null)} title={"Editar "+(isBank?"Conta":"Cartão")}>
+        <AcctForm type={curAcct?.type||"bank"} usedColors={accounts.filter(a=>a.id!==selAcctId).map(a=>a.color)} initial={curAcct} onSubmit={d=>{updateAccount(selAcctId,d);setModal(null)}}/>
+      </Modal>
+
       <Modal open={modal==="moveTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={"Mover para "+(isBank?"outra conta":"outro cartão")}>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <p style={{color:"#94a3b8",fontSize:13}}>Transação: <strong style={{color:"#e2e8f0"}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""}</p>
@@ -622,12 +631,12 @@ function ProfileForm({onSubmit}){
 }
 
 /* ─── Account Form ─── */
-function AcctForm({type,usedColors,onSubmit}){
-  const[name,setName]=useState("");const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));const[color,setColor]=useState(avail[0]||ACCT_COLORS[0]);
+function AcctForm({type,usedColors,onSubmit,initial}){
+  const[name,setName]=useState(initial?.name||"");const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));const[color,setColor]=useState(initial?.color||avail[0]||ACCT_COLORS[0]);
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <Field label="Nome"><input style={ST.input} placeholder={type==="bank"?"Ex: Nubank":"Ex: Visa Platinum"} value={name} onChange={e=>setName(e.target.value)}/></Field>
     <Field label="Cor"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{ACCT_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid #fff":"3px solid transparent",cursor:"pointer"}}/>)}</div></Field>
-    <button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type})}>Criar {type==="bank"?"Conta":"Cartão"}</button>
+    <button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type})}>{initial?"Salvar":"Criar"} {type==="bank"?"Conta":"Cartão"}</button>
   </div>
 }
 
