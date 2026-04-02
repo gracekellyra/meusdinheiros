@@ -108,6 +108,24 @@ function App(){
   useEffect(()=>{const h=e=>{if(viewStack.length>1){e.preventDefault();popView()}};window.addEventListener('popstate',h);return()=>window.removeEventListener('popstate',h)},[viewStack]);
   useEffect(()=>{if(viewStack.length>1)window.history.pushState(null,"")},[viewStack]);
 
+  // Swipe to change month
+  const touchStart=useRef(null);
+  const handleTouchStart=e=>{touchStart.current=e.touches[0].clientX};
+  const handleTouchEnd=e=>{
+    if(touchStart.current===null)return;
+    const diff=touchStart.current-e.changedTouches[0].clientX;
+    touchStart.current=null;
+    if(Math.abs(diff)>60){diff>0?navMonth(1):navMonth(-1)}
+  };
+
+  // Balance mode: "full" = end of month, "today" = up to today
+  const[balMode,setBalMode]=useState("full");
+  const now=new Date();const isCurrentMonth=month.m===now.getMonth()&&month.y===now.getFullYear();
+  const todayKey=td();
+
+  // Go to current month
+  const goToday=()=>{const d=new Date();setMonth({m:d.getMonth(),y:d.getFullYear()})};
+
   const st=useRef(null);const fr=useRef(true);
   useEffect(()=>{if(fr.current){fr.current=false;return}if(st.current)clearTimeout(st.current);st.current=setTimeout(()=>saveAll({profiles,accounts,txs,curProfileId}),400);return()=>{if(st.current)clearTimeout(st.current)}},[profiles,accounts,txs,curProfileId]);
 
@@ -256,13 +274,22 @@ function App(){
   },[txs,accounts,mKey,month]);
 
   const getBankBal=useCallback(id=>{
-    const ame=new Date(month.y,month.m+1,1);const ameS=ame.getFullYear()+"-"+String(ame.getMonth()+1).padStart(2,"0")+"-01";
+    // If "today" mode and viewing current month, cut off at today; otherwise end of month
+    const useToday=balMode==="today"&&isCurrentMonth;
+    const cutoff=useToday?new Date(now.getFullYear(),now.getMonth(),now.getDate()+1):new Date(month.y,month.m+1,1);
+    const cutoffS=cutoff.getFullYear()+"-"+String(cutoff.getMonth()+1).padStart(2,"0")+"-"+String(cutoff.getDate()).padStart(2,"0");
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
       const v=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;if(v===0)return s;
-      if(t.isRecurring){const st=new Date(t.date+"T12:00:00");if(st>=ame)return s;let el=ame;if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st)return s;const en=new Date(ed.getFullYear(),ed.getMonth()+1,1);if(en<ame)el=en}let c=0;const d=new Date(st.getFullYear(),st.getMonth(),1);while(d<el){const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");if(!(t.excludedMonths&&t.excludedMonths.includes(mk)))c++;d.setMonth(d.getMonth()+1)}return s+v*c}
-      if(t.date<ameS)return s+v;return s;
+      if(t.isRecurring){
+        const st2=new Date(t.date+"T12:00:00");if(st2>=cutoff)return s;
+        let el=cutoff;if(useToday){el=new Date(month.y,month.m+1,1)} // recurring counts full months even in today mode
+        if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st2)return s;const en=new Date(ed.getFullYear(),ed.getMonth()+1,1);if(en<el)el=en}
+        let c=0;const d=new Date(st2.getFullYear(),st2.getMonth(),1);while(d<el){const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");if(!(t.excludedMonths&&t.excludedMonths.includes(mk)))c++;d.setMonth(d.getMonth()+1)}return s+v*c;
+      }
+      if(useToday){if(t.date<=todayKey)return s+v;return s}
+      if(t.date<cutoffS)return s+v;return s;
     },0);
-  },[txs,month]);
+  },[txs,month,balMode,isCurrentMonth,todayKey]);
   const getBankPrev=useCallback(id=>{
     const c=mKey+"-01";const cms=new Date(month.y,month.m,1);
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
@@ -301,10 +328,22 @@ function App(){
 
   /* ═══ HOME ═══ */
   if(view==="home")return(
-    <div style={ST.app}>
+    <div style={ST.app} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <header style={ST.header}><button style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1.5px solid "+activeProfile.color,borderRadius:20,background:"transparent",color:activeProfile.color,cursor:"pointer",fontSize:14,fontWeight:600}} onClick={()=>setProfMenuOpen(!profMenuOpen)}><IcoUser/> {activeProfile.name}</button>
-        <div style={{display:"flex",alignItems:"center",gap:6}}><button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button><button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button><span style={ST.monthLbl}>{MONTHS[month.m].slice(0,3)} {month.y}</span><button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button></div>
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          <button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button>
+          <button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button>
+          <span style={{...ST.monthLbl,cursor:"pointer"}} onClick={goToday}>{MONTHS[month.m].slice(0,3)} {month.y}</span>
+          <button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button>
+          {!isCurrentMonth&&<button style={{...ST.navBtn,background:C.blue,color:"#fff",borderRadius:6,padding:"2px 6px",fontSize:10,fontWeight:700,marginLeft:2}} onClick={goToday}>Hoje</button>}
+        </div>
       </header>
+
+      {/* Balance mode toggle */}
+      {isCurrentMonth&&<div style={{display:"flex",justifyContent:"center",padding:"0 16px 8px",gap:4}}>
+        <button style={{...ST.toggleBtn,...(balMode==="today"?ST.toggleActive:{})}} onClick={()=>setBalMode("today")}>Até hoje</button>
+        <button style={{...ST.toggleBtn,...(balMode==="full"?ST.toggleActive:{})}} onClick={()=>setBalMode("full")}>Mês inteiro</button>
+      </div>}
 
       {profMenuOpen&&<div style={{background:C.card,border:"1px solid "+C.cardBorder,borderRadius:12,margin:"0 16px 12px",padding:8,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
         {profiles.map(p=><button key={p.id} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,fontWeight:500,color:p.id===curProfileId?C.text:p.color}} onClick={()=>{setCurProfileId(p.id);setProfMenuOpen(false)}}><IcoUser/> {p.name}{p.id===curProfileId?" ✓":""}</button>)}
@@ -314,7 +353,7 @@ function App(){
 
       {(bankAccts.length>0||cardAccts.length>0)&&(()=>{const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type==="expense"||t.type==="transfer").reduce((ss,t)=>ss+t.amount,0);const est=m.filter(t=>t.type==="income").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-est-pd)},0);const net=tB-tC;
         return <div style={{margin:"0 16px 14px",padding:16,background:C.card,borderRadius:14,border:"1px solid "+C.cardBorder,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:C.textSec,textTransform:"uppercase"}}>Saldo Total</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:net>=0?C.green:C.red}}>{fmt(net)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:C.textSec,textTransform:"uppercase"}}>{balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Total"}</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:net>=0?C.green:C.red}}>{fmt(net)}</span></div>
           <div style={{display:"flex",gap:16,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Contas: {fmt(tB)}</span><span style={{color:C.amber}}>Cartões: -{fmt(tC)}</span></div>
         </div>})()}
 
@@ -352,14 +391,25 @@ function App(){
   const allMoveTargets=moveTargets; // same list, now used in detail popup for all tx types including recurring
 
   return(
-    <div style={ST.app}>
+    <div style={ST.app} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <header style={{...ST.header,gap:8}}><div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}><button style={ST.navBtn} onClick={popView}><IcoBack/></button><h1 style={{fontSize:17,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:C.text}}><span style={{color:curAcct?.color}}>{isBank?"🏦":"💳"}</span> {curAcct?.name}</h1></div>
         <button style={ST.navBtn} onClick={()=>setSearchOpen(true)}><IcoSearch/></button><button style={ST.navBtn} onClick={()=>setModal("editAcct")}><IcoEdit/></button><button style={{...ST.navBtn,color:C.red}} onClick={()=>deleteAccount(selAcctId)}><IcoTrash/></button></header>
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,padding:"0 16px 12px"}}><button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button><span style={ST.monthLbl}>{MONTHS[month.m]} {month.y}</span><button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"0 16px 8px"}}>
+        <button style={ST.navBtn} onClick={()=>navMonth(-1)}><IcoChevL/></button>
+        <span style={{...ST.monthLbl,cursor:"pointer"}} onClick={goToday}>{MONTHS[month.m]} {month.y}</span>
+        <button style={ST.navBtn} onClick={()=>navMonth(1)}><IcoChevR/></button>
+        {!isCurrentMonth&&<button style={{...ST.navBtn,background:C.blue,color:"#fff",borderRadius:6,padding:"2px 6px",fontSize:10,fontWeight:700}} onClick={goToday}>Hoje</button>}
+      </div>
+
+      {/* Balance mode toggle */}
+      {isCurrentMonth&&<div style={{display:"flex",justifyContent:"center",padding:"0 16px 8px",gap:4}}>
+        <button style={{...ST.toggleBtn,...(balMode==="today"?ST.toggleActive:{})}} onClick={()=>setBalMode("today")}>Até hoje</button>
+        <button style={{...ST.toggleBtn,...(balMode==="full"?ST.toggleActive:{})}} onClick={()=>setBalMode("full")}>Mês inteiro</button>
+      </div>}
 
       <div style={{display:"flex",gap:6,padding:"0 16px 10px",flexWrap:"wrap"}}>
-        {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label="Saldo Final" value={fmt(prevBal+mInc-mExp)} color={curAcct?.color||C.blue}/></>
+        {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label={balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Final"} value={fmt(getBankBal(selAcctId))} color={curAcct?.color||C.blue}/></>
         :<><SumCard label="Fatura" value={fmt(cFatura)} color={C.amber}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cFatura-cPd))} color={cFatura-cPd>0?C.red:C.green}/></>}
       </div>
 
@@ -579,6 +629,8 @@ const ST={
   submitBtn:{background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",border:"none",borderRadius:12,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4},
   stepBtn:{display:"flex",alignItems:"center",justifyContent:"center",width:36,height:44,background:"none",border:"none",color:C.blue,cursor:"pointer"},
   scopeBtn:{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:C.inputBg,border:"1.5px solid",borderRadius:10,color:C.text,fontSize:14,fontWeight:500,cursor:"pointer"},
+  toggleBtn:{padding:"6px 14px",borderRadius:8,border:"1px solid "+C.cardBorder,background:C.card,color:C.textSec,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all .2s"},
+  toggleActive:{background:C.blue,color:"#fff",borderColor:C.blue},
 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
