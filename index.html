@@ -191,19 +191,48 @@ function App(){
     });setModal(null);setEditItem(null);
   },[mKey,month]);
 
-  const moveTxToAccount=useCallback((id,nid)=>{setTxs(p=>{const t=p.find(x=>x.id===id);if(!t)return p;let u=p.map(x=>x.id===id?{...x,accountId:nid}:x);if(t.type==="transfer")u=u.map(x=>x._mirrorOf===id?{...x,fromAccountId:nid}:x);if(t.type==="transfer_in"&&t._mirrorOf)u=u.map(x=>x.id===t._mirrorOf?{...x,toAccountId:nid}:x);return u});setModal(null);setEditItem(null)},[]);
+  const moveTxToAccount=useCallback((id,nid,recurScope)=>{setTxs(p=>{
+    const t=p.find(x=>x.id===id);if(!t)return p;
+    if(t.isRecurring&&recurScope){
+      if(recurScope==="this"){
+        // Store monthly override for accountId
+        const mo=t.monthOverrides?{...t.monthOverrides}:{};
+        mo[mKey]={...mo[mKey],_movedTo:nid};
+        return p.map(x=>x.id===id?{...x,monthOverrides:mo}:x);
+      }
+      if(recurScope==="forward"){
+        // End original at previous month and create new recurring in new account
+        const prevM=new Date(month.y,month.m,0);
+        const endStr=prevM.getFullYear()+"-"+String(prevM.getMonth()+1).padStart(2,"0")+"-"+String(prevM.getDate()).padStart(2,"0");
+        const newTx={...t,id:uid(),accountId:nid,date:mKey+"-"+t.date.split("-")[2],endDate:undefined,excludedMonths:undefined,paidMonths:undefined,monthOverrides:undefined};
+        let u=p.map(x=>x.id===id?{...x,endDate:endStr}:x);
+        u.push(newTx);
+        // Handle transfer mirror
+        if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid){const newMirror={...mid,id:uid(),_mirrorOf:newTx.id,fromAccountId:nid,date:newTx.date};u.push(newMirror)}}
+        return u.sort((a,b)=>a.date.localeCompare(b.date));
+      }
+      // "all" falls through to normal move
+    }
+    let u=p.map(x=>x.id===id?{...x,accountId:nid}:x);
+    if(t.type==="transfer")u=u.map(x=>x._mirrorOf===id?{...x,fromAccountId:nid}:x);
+    if(t.type==="transfer_in"&&t._mirrorOf)u=u.map(x=>x.id===t._mirrorOf?{...x,toAccountId:nid}:x);
+    return u;
+  });setModal(null);setEditItem(null)},[mKey,month]);
   const togglePaid=useCallback(id=>{setTxs(p=>{const t=p.find(x=>x.id===id);if(!t)return p;let u=p.map(x=>x.id===id?{...x,paid:!x.paid}:x);if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid)u=u.map(x=>x.id===mid.id?{...x,paid:!t.paid}:x)}if(t.type==="transfer_in"&&t._mirrorOf)u=u.map(x=>x.id===t._mirrorOf?{...x,paid:!t.paid}:x);return u})},[]);
   const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>{const t=p.find(x=>x.id===id);if(!t)return p;const pm=t.paidMonths?[...t.paidMonths]:[];const np=pm.includes(mk);const nPm=np?pm.filter(x=>x!==mk):[...pm,mk];let u=p.map(x=>x.id===id?{...x,paidMonths:nPm}:x);if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid){const mpm=mid.paidMonths?[...mid.paidMonths]:[];const mn=np?mpm.filter(x=>x!==mk):(mpm.includes(mk)?mpm:[...mpm,mk]);u=u.map(x=>x.id===mid.id?{...x,paidMonths:mn}:x)}}if(t.type==="transfer_in"&&t._mirrorOf){const o=p.find(x=>x.id===t._mirrorOf);if(o){const op=o.paidMonths?[...o.paidMonths]:[];const on=np?op.filter(x=>x!==mk):(op.includes(mk)?op:[...op,mk]);u=u.map(x=>x.id===t._mirrorOf?{...x,paidMonths:on}:x)}}return u})},[]);
   const deleteTx=useCallback((id,opts)=>{const dg=opts?.group;const rm=opts?.recurMode;setTxs(prev=>{const t=prev.find(x=>x.id===id);if(!t)return prev;if(rm&&t.isRecurring){if(rm==="all")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(rm==="this"){const excl=t.excludedMonths?[...t.excludedMonths]:[];if(!excl.includes(mKey))excl.push(mKey);return prev.map(x=>x.id===id?{...x,excludedMonths:excl}:x)}if(rm==="forward"){const pM=new Date(month.y,month.m,0);const es=pM.getFullYear()+"-"+String(pM.getMonth()+1).padStart(2,"0")+"-"+String(pM.getDate()).padStart(2,"0");return prev.map(x=>x.id===id?{...x,endDate:es}:x)}}if(dg&&t.groupId)return prev.filter(x=>x.groupId!==t.groupId);if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);return prev.filter(x=>x.id!==id)})},[mKey,month]);
 
   /* Per-account */
   const getMonthTxs=useCallback(acctId=>{
-    const acct=accounts.find(a=>a.id===acctId);const raw=txs.filter(t=>t.accountId===acctId);const isCard=acct&&acct.type==="card";const items=[];
-    raw.forEach(t=>{
+    const acct=accounts.find(a=>a.id===acctId);const isCard=acct&&acct.type==="card";const items=[];
+    // Process own transactions
+    txs.filter(t=>t.accountId===acctId).forEach(t=>{
       if(t.isRecurring){
         const txD=new Date((isCard?(t.dueDate||t.date):t.date)+"T12:00:00");const eom=new Date(month.y,month.m+1,0);
         if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(eom>ed)return}
         if(t.excludedMonths&&t.excludedMonths.includes(mKey))return;
+        // Check if moved away this month
+        if(t.monthOverrides&&t.monthOverrides[mKey]&&t.monthOverrides[mKey]._movedTo)return;
         if(txD<=eom){
           const isPd=(t.paidMonths||[]).includes(mKey);
           const overrides=t.monthOverrides&&t.monthOverrides[mKey]?t.monthOverrides[mKey]:{};
@@ -211,7 +240,19 @@ function App(){
         }return;
       }
       if(isCard){const ref=t.dueDate||t.date;if(ref.startsWith(mKey))items.push(t)}else{if(t.date.startsWith(mKey))items.push(t)}
-    });return items.sort((a,b)=>a.date.localeCompare(b.date));
+    });
+    // Include recurring txs moved TO this account for this month
+    txs.filter(t=>t.accountId!==acctId&&t.isRecurring&&t.monthOverrides&&t.monthOverrides[mKey]&&t.monthOverrides[mKey]._movedTo===acctId).forEach(t=>{
+      const txD=new Date((isCard?(t.dueDate||t.date):t.date)+"T12:00:00");const eom=new Date(month.y,month.m+1,0);
+      if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(eom>ed)return}
+      if(t.excludedMonths&&t.excludedMonths.includes(mKey))return;
+      if(txD<=eom){
+        const isPd=(t.paidMonths||[]).includes(mKey);
+        const overrides=t.monthOverrides[mKey]||{};
+        items.push({...t,...overrides,accountId:acctId,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd,_movedFrom:t.accountId});
+      }
+    });
+    return items.sort((a,b)=>a.date.localeCompare(b.date));
   },[txs,accounts,mKey,month]);
 
   const getBankBal=useCallback(id=>{
@@ -271,7 +312,7 @@ function App(){
         <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.red}} onClick={()=>deleteProfile(curProfileId)}><IcoTrash/> Excluir Perfil</button>
       </div>}
 
-      {(bankAccts.length>0||cardAccts.length>0)&&(()=>{const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type!=="transfer_in").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-pd)},0);const net=tB-tC;
+      {(bankAccts.length>0||cardAccts.length>0)&&(()=>{const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type==="expense"||t.type==="transfer").reduce((ss,t)=>ss+t.amount,0);const est=m.filter(t=>t.type==="income").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-est-pd)},0);const net=tB-tC;
         return <div style={{margin:"0 16px 14px",padding:16,background:C.card,borderRadius:14,border:"1px solid "+C.cardBorder,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:C.textSec,textTransform:"uppercase"}}>Saldo Total</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:net>=0?C.green:C.red}}>{fmt(net)}</span></div>
           <div style={{display:"flex",gap:16,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Contas: {fmt(tB)}</span><span style={{color:C.amber}}>Cartões: -{fmt(tC)}</span></div>
@@ -287,10 +328,10 @@ function App(){
 
       <div style={ST.sec}><div style={ST.secH}><span style={{color:C.amber,display:"flex"}}><IcoCard/></span><h2 style={{fontSize:16,fontWeight:700,flex:1,color:C.text}}>Cartões de Crédito</h2><button style={ST.addSm} onClick={()=>setModal("newCard")}><IcoPlus/></button></div>
         {cardAccts.length===0&&<p style={ST.empty}>Toque + para adicionar</p>}
-        {cardAccts.map(a=>{const mT=getMonthTxs(a.id);const sp=mT.filter(t=>t.type!=="transfer_in").reduce((s,t)=>s+t.amount,0);const pd=mT.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);
+        {cardAccts.map(a=>{const mT=getMonthTxs(a.id);const sp=mT.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);const est=mT.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);const pd=mT.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);const fat=Math.max(0,sp-est);
           return <div key={a.id} style={{...ST.aCard,borderLeftColor:a.color}} onClick={()=>{setSelAcctId(a.id);pushView("detail")}}>
-            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600,color:C.text}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:C.amber}}>{fmt(sp)}</span></div>
-            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Pago: {fmt(pd)}</span><span style={{color:sp-pd>0?C.red:C.textSec}}>Resta: {fmt(Math.max(0,sp-pd))}</span></div>
+            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600,color:C.text}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:C.amber}}>{fmt(fat)}</span></div>
+            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Pago: {fmt(pd)}</span><span style={{color:fat-pd>0?C.red:C.textSec}}>Resta: {fmt(Math.max(0,fat-pd))}</span></div>
           </div>})}</div>
 
       <Modal open={modal==="newProfile"} onClose={()=>setModal(null)} title="Novo Perfil"><ProfileForm onSubmit={addProfile}/></Modal>
@@ -303,9 +344,12 @@ function App(){
   const isBank=curAcct?curAcct.type==="bank":true;const monthTxs=curAcct?getMonthTxs(selAcctId):[];const prevBal=isBank?getBankPrev(selAcctId):0;
   const mInc=monthTxs.filter(t=>t.type==="income"||t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);
   const mExp=monthTxs.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);
-  const cSp=!isBank?monthTxs.filter(t=>t.type!=="transfer_in").reduce((s,t)=>s+t.amount,0):0;
+  const cSp=!isBank?monthTxs.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0):0;
+  const cEstorno=!isBank?monthTxs.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0):0;
   const cPd=!isBank?monthTxs.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0):0;
+  const cFatura=Math.max(0,cSp-cEstorno);
   const moveTargets=accounts.filter(a=>a.type===(curAcct?curAcct.type:"bank")&&a.id!==selAcctId);
+  const allMoveTargets=moveTargets; // same list, now used in detail popup for all tx types including recurring
 
   return(
     <div style={ST.app}>
@@ -316,22 +360,34 @@ function App(){
 
       <div style={{display:"flex",gap:6,padding:"0 16px 10px",flexWrap:"wrap"}}>
         {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label="Saldo Final" value={fmt(prevBal+mInc-mExp)} color={curAcct?.color||C.blue}/></>
-        :<><SumCard label="Fatura" value={fmt(cSp)} color={C.amber}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cSp-cPd))} color={cSp-cPd>0?C.red:C.green}/></>}
+        :<><SumCard label="Fatura" value={fmt(cFatura)} color={C.amber}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cFatura-cPd))} color={cFatura-cPd>0?C.red:C.green}/></>}
       </div>
 
       {isBank&&prevBal!==0&&<div style={{fontSize:12,color:C.textSec,padding:"0 20px 10px",fontFamily:"'JetBrains Mono',monospace"}}>Saldo anterior: <strong>{fmt(prevBal)}</strong></div>}
 
       <div style={{display:"flex",flexDirection:"column",gap:2,padding:"0 16px"}}>
         {monthTxs.length===0&&<p style={ST.empty}>Nenhuma movimentação neste mês</p>}
-        {monthTxs.map((t,i)=>{
+        {(()=>{
+          let lastDay=null;
+          return monthTxs.map((t,i)=>{
           let running=null;if(isBank){running=prevBal+monthTxs.slice(0,i+1).reduce((s,x)=>{if(x.type==="income"||x.type==="transfer_in")return s+x.amount;if(x.type==="expense"||x.type==="transfer")return s-x.amount;return s},0)}
           const isIn=t.type==="income"||t.type==="transfer_in";const col=txColor(t);
           const destA=t.toAccountId?accounts.find(a=>a.id===t.toAccountId):null;const srcA=t.fromAccountId?accounts.find(a=>a.id===t.fromAccountId):null;
           const isPaid=t._virtual&&t.isRecurring?t._recurPaid:t.paid;
           const isRecurVirtual=t._virtual&&t.isRecurring;
 
-          return <div key={t.id+"-"+i} style={{...ST.txItem,opacity:isPaid?0.55:1}}>
-            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={()=>{if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
+          // Day separator for bank accounts
+          const day=t.date.split("-")[2];
+          let showDay=false;
+          if(isBank&&day!==lastDay){showDay=true;lastDay=day}
+
+          return <React.Fragment key={t.id+"-"+i}>
+            {showDay&&<div style={{fontSize:11,fontWeight:700,color:C.textSec,padding:"10px 4px 4px",borderBottom:"1px solid "+C.cardBorder,marginBottom:4}}>{parseInt(day)} de {MONTHS[month.m]}</div>}
+            <div style={{...ST.txItem,opacity:isPaid?0.55:1,cursor:"pointer"}} onClick={()=>{
+              const ei=isRecurVirtual?{...t,paid:t._recurPaid}:t;
+              setEditItem(ei);setModal("txDetail");
+            }}>
+            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
             <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{minWidth:0,flex:1}}>
@@ -341,27 +397,17 @@ function App(){
                   {t.isRecurring&&<span style={{...ST.badge,background:"#ede9fe",color:C.purple}}>Rec</span>}
                 </div>
                 <div style={{fontSize:10,color:C.textSec,marginTop:2}}>
-                  {t.date.split("-").reverse().join("/")} · {t.category}{destA&&<span style={{color:destA.color}}> → {destA.name}</span>}{srcA&&<span style={{color:srcA.color}}> ← {srcA.name}</span>}{t.dueDate&&(" · Venc: "+t.dueDate.split("-").reverse().join("/"))}
+                  {t.date.split("-").reverse().join("/")} · {t.category}
                 </div>
               </div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:col,textDecoration:isPaid?"line-through":"none"}}>{isIn?"+":"−"} {fmt(t.amount)}</div>
               {running!==null&&<div style={{fontSize:9,color:C.textTer,fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>Saldo: {fmt(running)}</div>}
-              <div style={{display:"flex",gap:3,justifyContent:"flex-end",marginTop:3}}>
-                {moveTargets.length>0&&!t._virtual&&<button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("moveTx")}}><IcoMove/></button>}
-                {/* Edit: recurring opens scope modal, others edit directly */}
-                {isRecurVirtual?
-                  <button style={ST.sBtn} onClick={()=>{setEditItem({...t,paid:t._recurPaid});setModal("editRecurScope")}}><IcoEdit/></button>
-                : <button style={ST.sBtn} onClick={()=>{setEditItem(t);setModal("editTx")}}><IcoEdit/></button>}
-                {/* Delete */}
-                {isRecurVirtual?<button style={{...ST.sBtn,color:C.red}} onClick={()=>{setEditItem(t);setModal("delRecurring")}}><IcoTrash/></button>
-                :t.groupId?<button style={{...ST.sBtn,color:C.red}} onClick={()=>{setEditItem(t);setModal("delInstall")}}><IcoTrash/></button>
-                :<button style={{...ST.sBtn,color:C.red}} onClick={()=>deleteTx(t.id)}><IcoTrash/></button>}
-              </div>
             </div>
           </div>
-        })}
+          </React.Fragment>
+        })})()}
       </div>
 
       <button style={ST.fab} onClick={()=>setModal("addTx")}><IcoPlus/> Nova Transação</button>
@@ -369,12 +415,66 @@ function App(){
       <Modal open={modal==="addTx"||modal==="editTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={modal==="editTx"?"Editar Transação":"Nova Transação"}>
         <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} onSubmit={(d,rs)=>editItem?updateTx(editItem.id,d,rs):addTx(d)}/>
       </Modal>
+
+      {/* Transaction detail popup */}
+      <Modal open={modal==="txDetail"} onClose={()=>{setModal(null);setEditItem(null)}} title="Detalhes da Transação">
+        {editItem&&(()=>{
+          const ei=editItem;const isIn=ei.type==="income"||ei.type==="transfer_in";const isTr=ei.type==="transfer"||ei.type==="transfer_in";
+          const col=txColor(ei);const isRV=ei._virtual&&ei.isRecurring;
+          const destA=ei.toAccountId?accounts.find(a=>a.id===ei.toAccountId):null;
+          const srcA=ei.fromAccountId?accounts.find(a=>a.id===ei.fromAccountId):null;
+          const isPaid=isRV?ei._recurPaid:ei.paid;
+          return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:col}}/>
+              <span style={{fontSize:16,fontWeight:700,color:C.text,flex:1}}>{ei.description}</span>
+              <span style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:col}}>{isIn?"+":"−"}{fmt(ei.amount)}</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,fontSize:13,color:C.textSec}}>
+              <div><strong style={{color:C.text}}>Data:</strong> {ei.date.split("-").reverse().join("/")}</div>
+              <div><strong style={{color:C.text}}>Tipo:</strong> {ei.type==="income"?"Entrada":ei.type==="expense"?"Saída":ei.type==="transfer"?"Transferência (saída)":"Transferência (entrada)"}</div>
+              <div><strong style={{color:C.text}}>Categoria:</strong> {ei.category}</div>
+              {ei.dueDate&&<div><strong style={{color:C.text}}>Vencimento:</strong> {ei.dueDate.split("-").reverse().join("/")}</div>}
+              {destA&&<div><strong style={{color:C.text}}>Destino:</strong> <span style={{color:destA.color}}>{destA.name}</span></div>}
+              {srcA&&<div><strong style={{color:C.text}}>Origem:</strong> <span style={{color:srcA.color}}>{srcA.name}</span></div>}
+              {ei.instNum&&<div><strong style={{color:C.text}}>Parcela:</strong> {ei.instNum}/{ei.instTotal} (Total: {fmt(ei.instUnitAmount*ei.instTotal)})</div>}
+              {ei.isRecurring&&<div><strong style={{color:C.text}}>Recorrente:</strong> Mensal</div>}
+              <div><strong style={{color:C.text}}>Status:</strong> {isPaid?<span style={{color:C.green}}>Pago</span>:<span style={{color:C.amber}}>Pendente</span>}</div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              {allMoveTargets.length>0&&<button style={{...ST.scopeBtn,flex:1,justifyContent:"center",borderColor:C.purple}} onClick={()=>{
+                if(ei._virtual&&ei.isRecurring)setModal("moveRecurScope");
+                else setModal("moveTx");
+              }}><IcoMove/> Mover</button>}
+              <button style={{...ST.scopeBtn,flex:1,justifyContent:"center",borderColor:C.blue}} onClick={()=>{
+                if(isRV)setModal("editRecurScope");
+                else setModal("editTx");
+              }}><IcoEdit/> Editar</button>
+              <button style={{...ST.scopeBtn,flex:1,justifyContent:"center",borderColor:C.red,color:C.red}} onClick={()=>{
+                if(isRV)setModal("delRecurring");
+                else if(ei.groupId)setModal("delInstall");
+                else{deleteTx(ei.id);setModal(null);setEditItem(null)}
+              }}><IcoTrash/> Excluir</button>
+            </div>
+          </div>
+        })()}
+      </Modal>
       <Modal open={modal==="editAcct"} onClose={()=>setModal(null)} title={"Editar "+(isBank?"Conta":"Cartão")}>
         <AcctForm type={curAcct?.type||"bank"} usedColors={accounts.filter(a=>a.id!==selAcctId).map(a=>a.color)} initial={curAcct} onSubmit={d=>{updateAccount(selAcctId,d);setModal(null)}}/>
       </Modal>
+      {/* Move recurring scope */}
+      <Modal open={modal==="moveRecurScope"} onClose={()=>{setModal(null);setEditItem(null)}} title="Mover Recorrência">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{color:C.textSec,fontSize:13}}><strong style={{color:C.text}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""} / mês</p>
+          <button style={{...ST.scopeBtn,borderColor:C.amber}} onClick={()=>{setEditItem({...editItem,_moveScope:"this"});setModal("moveTx")}}><span style={{color:C.amber,fontWeight:700}}>1x</span> Mover apenas este mês ({MONTHS[month.m]})</button>
+          <button style={{...ST.scopeBtn,borderColor:"#ea580c"}} onClick={()=>{setEditItem({...editItem,_moveScope:"forward"});setModal("moveTx")}}><span style={{color:"#ea580c",fontWeight:700}}>→</span> Mover daqui para frente</button>
+          <button style={{...ST.scopeBtn,borderColor:C.blue}} onClick={()=>{setEditItem({...editItem,_moveScope:"all"});setModal("moveTx")}}><span style={{color:C.blue,fontWeight:700}}>✎</span> Mover desde a original (todos os meses)</button>
+        </div>
+      </Modal>
+
       <Modal open={modal==="moveTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={"Mover para "+(isBank?"outra conta":"outro cartão")}>
         <div style={{display:"flex",flexDirection:"column",gap:10}}><p style={{color:C.textSec,fontSize:13}}>Transação: <strong style={{color:C.text}}>{editItem?.description}</strong> — {editItem?fmt(editItem.amount):""}</p>
-          {moveTargets.map(a=>{const op=profiles.find(p=>p.id===a.profileId);return <button key={a.id} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:C.inputBg,border:"1.5px solid "+a.color,borderRadius:10,color:C.text,fontSize:14,fontWeight:500,cursor:"pointer"}} onClick={()=>moveTxToAccount(editItem.id,a.id)}><span style={{color:a.color}}>{a.type==="bank"?"🏦":"💳"}</span>{a.name}{op&&<span style={{fontSize:11,color:C.textSec,marginLeft:"auto"}}>({op.name})</span>}</button>})}</div>
+          {moveTargets.map(a=>{const op=profiles.find(p=>p.id===a.profileId);return <button key={a.id} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:C.inputBg,border:"1.5px solid "+a.color,borderRadius:10,color:C.text,fontSize:14,fontWeight:500,cursor:"pointer"}} onClick={()=>moveTxToAccount(editItem.id,a.id,editItem?._moveScope)}><span style={{color:a.color}}>{a.type==="bank"?"🏦":"💳"}</span>{a.name}{op&&<span style={{fontSize:11,color:C.textSec,marginLeft:"auto"}}>({op.name})</span>}</button>})}</div>
       </Modal>
 
       {/* Edit recurring scope modal */}
@@ -431,7 +531,10 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,onSubmit}){
       <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:"#fef2f2"}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Saída</button>
       <button style={{...ST.typeBtn,...(form.type==="transfer"?{borderColor:C.purple,color:C.purple,background:"#f5f3ff"}:{})}} onClick={()=>set("type","transfer")}><IcoTransfer/> Transf.</button>
     </div>}
-    {!isBank&&<p style={{color:C.textSec,fontSize:13}}>Despesa no cartão <strong style={{color:account?.color}}>{account?.name}</strong></p>}
+    {!isBank&&<div style={{display:"flex",gap:6,marginBottom:4}}>
+      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:"#fef2f2"}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Despesa</button>
+      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:C.green,color:C.green,background:"#f0fdf4"}:{})}} onClick={()=>set("type","income")}><IcoUp/> Estorno</button>
+    </div>}
     {form.type==="transfer"&&<Field label="Destino" error={errs.toAccountId}><select style={ST.input} className={errs.toAccountId?"field-error":""} value={form.toAccountId} onChange={e=>set("toAccountId",e.target.value)}><option value="">Selecione...</option>{others.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>}
     <Field label="Data"><input type="date" style={ST.input} value={form.date} onChange={e=>set("date",e.target.value)}/></Field>
     <Field label="Descrição" error={errs.description}><DescInput style={ST.input} className={errs.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} suggestions={descriptions}/></Field>
