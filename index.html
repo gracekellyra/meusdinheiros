@@ -172,36 +172,48 @@ function App(){
   const updateTx=useCallback((id,data,recurScope)=>{
     setTxs(p=>{
       const orig=p.find(t=>t.id===id);if(!orig)return p;
-      let patchData={...data};
+      // Sanitize: only keep editable fields, strip virtual/internal flags
+      const clean={};
+      ["description","amount","date","category","dueDate","type","toAccountId","installments","isRecurring","paid","accountId"].forEach(k=>{if(data[k]!==undefined)clean[k]=data[k]});
+      let patchData={...clean};
       // Recurring: scope handling
       if(orig.isRecurring&&recurScope){
         if(recurScope==="this"){
-          // For "just this month" edits on recurring, we store monthly overrides
+          // Save only changed editable fields as override (no paid - that's separate)
+          const overrideFields={};
+          ["description","amount","date","category","dueDate"].forEach(k=>{if(clean[k]!==undefined)overrideFields[k]=clean[k]});
           const mo=orig.monthOverrides?{...orig.monthOverrides}:{};
-          mo[mKey]={...mo[mKey],...data};
-          return p.map(t=>t.id===id?{...t,monthOverrides:mo}:t).sort((a,b)=>a.date.localeCompare(b.date));
+          mo[mKey]={...mo[mKey],...overrideFields};
+          // Handle paid separately via paidMonths
+          let updated=p.map(t=>t.id===id?{...t,monthOverrides:mo}:t);
+          if(clean.paid!==undefined){
+            const pm=orig.paidMonths?[...orig.paidMonths]:[];
+            if(clean.paid&&!pm.includes(mKey))pm.push(mKey);
+            else if(!clean.paid){const idx=pm.indexOf(mKey);if(idx>=0)pm.splice(idx,1)}
+            updated=updated.map(t=>t.id===id?{...t,paidMonths:pm}:t);
+          }
+          return updated.sort((a,b)=>a.date.localeCompare(b.date));
         }
         if(recurScope==="forward"){
-          // Set endDate to previous month and create a new recurring from this month
           const prevM=new Date(month.y,month.m,0);
           const endStr=prevM.getFullYear()+"-"+String(prevM.getMonth()+1).padStart(2,"0")+"-"+String(prevM.getDate()).padStart(2,"0");
-          const newTx={...orig,...data,id:uid(),date:mKey+"-"+orig.date.split("-")[2],endDate:undefined,excludedMonths:undefined,paidMonths:undefined,monthOverrides:undefined};
+          const newTx={...orig,...clean,id:uid(),date:mKey+"-"+orig.date.split("-")[2],endDate:undefined,excludedMonths:undefined,paidMonths:undefined,monthOverrides:undefined};
           return [...p.map(t=>t.id===id?{...t,endDate:endStr}:t),newTx].sort((a,b)=>a.date.localeCompare(b.date));
         }
         // "all" falls through to normal edit
       }
-      if(orig.isRecurring&&data.paid!==undefined){
+      if(orig.isRecurring&&clean.paid!==undefined){
         const pm=orig.paidMonths?[...orig.paidMonths]:[];
-        if(data.paid&&!pm.includes(mKey))pm.push(mKey);
-        else if(!data.paid){const idx=pm.indexOf(mKey);if(idx>=0)pm.splice(idx,1)}
+        if(clean.paid&&!pm.includes(mKey))pm.push(mKey);
+        else if(!clean.paid){const idx=pm.indexOf(mKey);if(idx>=0)pm.splice(idx,1)}
         patchData.paidMonths=pm;delete patchData.paid;
       }
       let updated=p.map(t=>t.id===id?{...t,...patchData}:t);
       if(orig.type==="transfer"||orig.type==="transfer_in"){
         const mirrorId=orig.type==="transfer"?p.find(t=>t._mirrorOf===id)?.id:orig._mirrorOf;
         if(mirrorId){
-          const mp={};if(data.description)mp.description=data.description;if(data.amount!==undefined)mp.amount=data.amount;if(data.date)mp.date=data.date;if(data.dueDate!==undefined)mp.dueDate=data.dueDate;
-          if(data.paid!==undefined){const mo=p.find(t=>t.id===mirrorId);if(mo&&mo.isRecurring){const mpm=mo.paidMonths?[...mo.paidMonths]:[];if(data.paid&&!mpm.includes(mKey))mpm.push(mKey);else if(!data.paid){const idx=mpm.indexOf(mKey);if(idx>=0)mpm.splice(idx,1)}mp.paidMonths=mpm}else{mp.paid=data.paid}}
+          const mp={};if(clean.description)mp.description=clean.description;if(clean.amount!==undefined)mp.amount=clean.amount;if(clean.date)mp.date=clean.date;if(clean.dueDate!==undefined)mp.dueDate=clean.dueDate;
+          if(clean.paid!==undefined){const mo=p.find(t=>t.id===mirrorId);if(mo&&mo.isRecurring){const mpm=mo.paidMonths?[...mo.paidMonths]:[];if(clean.paid&&!mpm.includes(mKey))mpm.push(mKey);else if(!clean.paid){const idx=mpm.indexOf(mKey);if(idx>=0)mpm.splice(idx,1)}mp.paidMonths=mpm}else{mp.paid=clean.paid}}
           updated=updated.map(t=>t.id===mirrorId?{...t,...mp}:t);
         }
       }
@@ -274,18 +286,33 @@ function App(){
   },[txs,accounts,mKey,month]);
 
   const getBankBal=useCallback(id=>{
-    // If "today" mode and viewing current month, cut off at today; otherwise end of month
     const useToday=balMode==="today"&&isCurrentMonth;
     const cutoff=useToday?new Date(now.getFullYear(),now.getMonth(),now.getDate()+1):new Date(month.y,month.m+1,1);
     const cutoffS=cutoff.getFullYear()+"-"+String(cutoff.getMonth()+1).padStart(2,"0")+"-"+String(cutoff.getDate()).padStart(2,"0");
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
-      const v=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;if(v===0)return s;
+      const baseV=(t.type==="income"||t.type==="transfer_in")?1:(t.type==="expense"||t.type==="transfer")?-1:0;
+      if(baseV===0)return s;
       if(t.isRecurring){
         const st2=new Date(t.date+"T12:00:00");if(st2>=cutoff)return s;
-        let el=cutoff;if(useToday){el=new Date(month.y,month.m+1,1)} // recurring counts full months even in today mode
+        let el=cutoff;if(useToday){el=new Date(month.y,month.m+1,1)}
         if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st2)return s;const en=new Date(ed.getFullYear(),ed.getMonth()+1,1);if(en<el)el=en}
-        let c=0;const d=new Date(st2.getFullYear(),st2.getMonth(),1);while(d<el){const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");if(!(t.excludedMonths&&t.excludedMonths.includes(mk)))c++;d.setMonth(d.getMonth()+1)}return s+v*c;
+        let total=0;
+        const d=new Date(st2.getFullYear(),st2.getMonth(),1);
+        while(d<el){
+          const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+          if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){
+            // Check if this month was moved away
+            const ov=t.monthOverrides&&t.monthOverrides[mk]?t.monthOverrides[mk]:null;
+            if(!(ov&&ov._movedTo)){
+              const monthAmount=ov&&ov.amount!==undefined?ov.amount:t.amount;
+              total+=baseV*monthAmount;
+            }
+          }
+          d.setMonth(d.getMonth()+1);
+        }
+        return s+total;
       }
+      const v=baseV*t.amount;
       if(useToday){if(t.date<=todayKey)return s+v;return s}
       if(t.date<cutoffS)return s+v;return s;
     },0);
@@ -293,8 +320,27 @@ function App(){
   const getBankPrev=useCallback(id=>{
     const c=mKey+"-01";const cms=new Date(month.y,month.m,1);
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
-      const v=(t.type==="income"||t.type==="transfer_in")?t.amount:(t.type==="expense"||t.type==="transfer")?-t.amount:0;if(v===0)return s;
-      if(t.isRecurring){const st=new Date(t.date+"T12:00:00");if(st>=cms)return s;let el=cms;if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st)return s;if(ed<cms)el=new Date(ed.getFullYear(),ed.getMonth()+1,1)}let ct=0;const d=new Date(st.getFullYear(),st.getMonth(),1);while(d<el){const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");if(!(t.excludedMonths&&t.excludedMonths.includes(mk)))ct++;d.setMonth(d.getMonth()+1)}return s+v*ct}
+      const baseV=(t.type==="income"||t.type==="transfer_in")?1:(t.type==="expense"||t.type==="transfer")?-1:0;
+      if(baseV===0)return s;
+      if(t.isRecurring){
+        const st2=new Date(t.date+"T12:00:00");if(st2>=cms)return s;
+        let el=cms;if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st2)return s;if(ed<cms)el=new Date(ed.getFullYear(),ed.getMonth()+1,1)}
+        let total=0;
+        const d=new Date(st2.getFullYear(),st2.getMonth(),1);
+        while(d<el){
+          const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+          if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){
+            const ov=t.monthOverrides&&t.monthOverrides[mk]?t.monthOverrides[mk]:null;
+            if(!(ov&&ov._movedTo)){
+              const monthAmount=ov&&ov.amount!==undefined?ov.amount:t.amount;
+              total+=baseV*monthAmount;
+            }
+          }
+          d.setMonth(d.getMonth()+1);
+        }
+        return s+total;
+      }
+      const v=baseV*t.amount;
       if(t.date<c)return s+v;return s;
     },0);
   },[txs,mKey,month]);
