@@ -83,6 +83,20 @@ function Field({label,children,error}){return <div style={{display:"flex",flexDi
 function SumCard({label,value,color}){return <div style={{flex:"1 1 130px",background:C.card,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:3,borderLeft:"3px solid "+color,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}><span style={{fontSize:10,fontWeight:600,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span><span style={{fontSize:15,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color}}>{value}</span></div>}
 function CatSelect({value,onChange,style}){const parts=value?value.split(" > "):["Outros","Outros"];const cat=parts[0]||"Outros";const sub=parts[1]||"Outros";const subs=CAT_TREE[cat]||["Outros"];return <div style={{display:"flex",gap:6}}><select style={{...style,flex:1}} value={cat} onChange={e=>{const c=e.target.value;onChange(c+" > "+(CAT_TREE[c]||["Outros"])[0])}}>{CAT_KEYS.map(c=><option key={c} value={c}>{c}</option>)}</select><select style={{...style,flex:1}} value={sub} onChange={e=>onChange(cat+" > "+e.target.value)}>{subs.map(s=><option key={s} value={s}>{s}</option>)}</select></div>}
 function DescInput({value,onChange,suggestions,style,className}){const[show,setShow]=useState(false);const[filtered,setFiltered]=useState([]);const handleChange=v=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else setShow(false)};return <div style={{position:"relative"}}><input style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>{show&&<div className="suggestions-list">{filtered.map((s,i)=><button key={i} onMouseDown={e=>{e.preventDefault();onChange(s);setShow(false)}}>{s}</button>)}</div>}</div>}
+/* Money input: types digits, formats as currency with comma. Internal value is string number like "10.00" */
+function MoneyInput({value,onChange,style,className}){
+  // value is the form's amount string like "10.5". Display as "10,50" formatted.
+  const cents=Math.round((parseFloat(value)||0)*100);
+  const display=cents===0?"":(cents/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const handleChange=e=>{
+    // Strip everything except digits
+    const digits=e.target.value.replace(/\D/g,"");
+    if(!digits){onChange("");return}
+    const newCents=parseInt(digits,10);
+    onChange((newCents/100).toString());
+  };
+  return <input type="text" inputMode="numeric" style={style} className={className} placeholder="0,00" value={display} onChange={handleChange}/>
+}
 function InstStepper({value,onChange,disabled}){return <div style={{display:"flex",alignItems:"center",gap:0,background:C.inputBg,border:"1px solid "+C.inputBorder,borderRadius:10,overflow:"hidden"}}><button style={{...ST.stepBtn,opacity:disabled?0.3:1}} disabled={disabled||value<=1} onClick={()=>onChange(Math.max(1,value-1))}><IcoMinus/></button><input type="number" min="1" max="48" style={{...ST.input,width:50,textAlign:"center",border:"none",borderRadius:0,padding:"11px 4px"}} value={value} onChange={e=>onChange(parseInt(e.target.value)||1)} disabled={disabled}/><button style={{...ST.stepBtn,opacity:disabled?0.3:1}} disabled={disabled} onClick={()=>onChange(Math.min(48,value+1))}><IcoPlusSmall/></button></div>}
 
 /* ═══ APP ═══ */
@@ -634,7 +648,7 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,onSubmit}){
     {form.type==="transfer"&&<Field label="Destino" error={errs.toAccountId}><select style={ST.input} className={errs.toAccountId?"field-error":""} value={form.toAccountId} onChange={e=>set("toAccountId",e.target.value)}><option value="">Selecione...</option>{others.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>}
     <Field label="Data"><input type="date" style={ST.input} value={form.date} onChange={e=>set("date",e.target.value)}/></Field>
     <Field label="Descrição" error={errs.description}><DescInput style={ST.input} className={errs.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} suggestions={descriptions}/></Field>
-    <Field label={initial?.instNum?("Valor parcela "+initial.instNum+"/"+initial.instTotal+" (R$)"):"Valor "+(form.installments>1?"da parcela ":"")+"(R$)"} error={errs.amount}><input type="number" step="0.01" style={ST.input} className={errs.amount?"field-error":""} placeholder="0,00" value={form.amount} onChange={e=>set("amount",e.target.value)}/></Field>
+    <Field label={initial?.instNum?("Valor parcela "+initial.instNum+"/"+initial.instTotal+" (R$)"):"Valor "+(form.installments>1?"da parcela ":"")+"(R$)"} error={errs.amount}><MoneyInput style={ST.input} className={errs.amount?"field-error":""} value={form.amount} onChange={v=>set("amount",v)}/></Field>
     <Field label="Categoria"><CatSelect value={form.category} onChange={v=>set("category",v)} style={ST.input}/></Field>
     {!isBank&&<Field label="Data de Vencimento" error={errs.dueDate}><input type="date" style={ST.input} className={errs.dueDate?"field-error":""} value={form.dueDate} onChange={e=>set("dueDate",e.target.value)}/></Field>}
     {/* Installments & recurring for ALL types including income (#2, #6) */}
