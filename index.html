@@ -280,7 +280,8 @@ function App(){
         if(txD<=eom){
           const isPd=(t.paidMonths||[]).includes(mKey);
           const overrides=t.monthOverrides&&t.monthOverrides[mKey]?t.monthOverrides[mKey]:{};
-          items.push({...t,...overrides,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd});
+          const defaultDate=mKey+"-"+String(txD.getDate()).padStart(2,"0");
+          items.push({...t,...overrides,date:overrides.date||defaultDate,_virtual:true,_recurPaid:isPd});
         }return;
       }
       if(isCard){const ref=t.dueDate||t.date;if(ref.startsWith(mKey))items.push(t)}else{if(t.date.startsWith(mKey))items.push(t)}
@@ -293,7 +294,8 @@ function App(){
       if(txD<=eom){
         const isPd=(t.paidMonths||[]).includes(mKey);
         const overrides=t.monthOverrides[mKey]||{};
-        items.push({...t,...overrides,accountId:acctId,date:mKey+"-"+String(txD.getDate()).padStart(2,"0"),_virtual:true,_recurPaid:isPd,_movedFrom:t.accountId});
+        const defaultDate=mKey+"-"+String(txD.getDate()).padStart(2,"0");
+        items.push({...t,...overrides,accountId:acctId,date:overrides.date||defaultDate,_virtual:true,_recurPaid:isPd,_movedFrom:t.accountId});
       }
     });
     return items.sort((a,b)=>a.date.localeCompare(b.date));
