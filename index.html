@@ -43,7 +43,7 @@ const C={green:"#16a34a",red:"#dc2626",purple:"#7c3aed",blue:"#2563eb",amber:"#d
   bg:"#f8fafc",card:"#ffffff",cardBorder:"#e2e8f0",text:"#1e293b",textSec:"#64748b",textTer:"#94a3b8",
   inputBg:"#f1f5f9",inputBorder:"#e2e8f0",overlayBg:"rgba(0,0,0,0.4)"};
 
-const CAT_TREE={"Alimentação":["Supermercado","Restaurante","Delivery","Padaria","Feira","Outros"],"Moradia":["Aluguel","Condomínio","Energia","Água","Gás","Internet","IPTU","Manutenção","Outros"],"Transporte":["Combustível","Estacionamento","Transporte público","Uber/99","Manutenção veículo","Seguro veículo","IPVA","Pedágio","Outros"],"Saúde":["Plano de saúde","Consulta médica","Farmácia","Dentista","Exames","Academia","Outros"],"Educação":["Escola/Faculdade","Curso online","Livros","Material escolar","Outros"],"Lazer":["Cinema/Teatro","Viagem","Streaming","Jogos","Hobby","Bares","Outros"],"Vestuário":["Roupas","Calçados","Acessórios","Outros"],"Renda":["Salário","Comissão","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Estorno","Reembolso","13º Salário","Férias","Dividendos","Outros"],"Finanças":["Transferência","Empréstimo","Juros","Tarifas bancárias","Outros"],"Compras":["Eletrônicos","Móveis","Eletrodomésticos","Presentes","Outros"],"Serviços":["Assinaturas","Celular","Seguros","Contabilidade","Outros"],"Pets":["Ração","Veterinário","Acessórios","Outros"],"Pessoal":["Beleza","Cuidados pessoais","Outros"],"Outros":["Outros"]};
+const CAT_TREE={"Alimentação":["Supermercado","Restaurante","Delivery","Padaria","Feira","Outros"],"Moradia":["Aluguel","Condomínio","Energia","Água","Gás","Internet","IPTU","Manutenção","Outros"],"Transporte":["Combustível","Estacionamento","Transporte público","Uber/99","Manutenção veículo","Seguro veículo","IPVA","Pedágio","Outros"],"Saúde":["Plano de saúde","Consulta médica","Farmácia","Dentista","Exames","Academia","Outros"],"Educação":["Escola/Faculdade","Curso online","Livros","Material escolar","Outros"],"Lazer":["Cinema/Teatro","Viagem","Streaming","Jogos","Hobby","Bares","Outros"],"Vestuário":["Roupas","Calçados","Acessórios","Outros"],"Renda":["Salário","Comissão","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Estorno","Reembolso","13º Salário","Férias","Dividendos","Publi/Parceria","Plataformas digitais","Outros"],"Finanças":["Transferência","Empréstimo","Juros","Tarifas bancárias","Outros"],"Compras":["Eletrônicos","Móveis","Eletrodomésticos","Presentes","Outros"],"Serviços":["Assinaturas","Celular","Seguros","Contabilidade","Outros"],"Pets":["Ração","Veterinário","Acessórios","Outros"],"Pessoal":["Beleza","Cuidados pessoais","Outros"],"Marketing Digital":["Tráfego pago","Ferramentas","Plataformas","Produção de conteúdo","Equipamentos","Assessoria","Cursos","Comissão plataforma","Outros"],"Outros":["Outros"]};
 const CAT_KEYS=Object.keys(CAT_TREE);
 const MONTHS=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const ACCT_COLORS=["#6366f1","#2563eb","#0891b2","#16a34a","#d97706","#dc2626","#db2777","#7c3aed","#059669","#ea580c"];
@@ -82,7 +82,7 @@ function Modal({open,onClose,title,children}){if(!open)return null;return <div s
 function Field({label,children,error}){return <div style={{display:"flex",flexDirection:"column",gap:5}}><label style={ST.lbl}>{label}</label>{children}{error&&<span style={{fontSize:11,color:C.red}}>{error}</span>}</div>}
 function SumCard({label,value,color}){return <div style={{flex:"1 1 130px",background:C.card,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:3,borderLeft:"3px solid "+color,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}><span style={{fontSize:10,fontWeight:600,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span><span style={{fontSize:15,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color}}>{value}</span></div>}
 function CatSelect({value,onChange,style}){const parts=value?value.split(" > "):["Outros","Outros"];const cat=parts[0]||"Outros";const sub=parts[1]||"Outros";const subs=CAT_TREE[cat]||["Outros"];return <div style={{display:"flex",gap:6}}><select style={{...style,flex:1}} value={cat} onChange={e=>{const c=e.target.value;onChange(c+" > "+(CAT_TREE[c]||["Outros"])[0])}}>{CAT_KEYS.map(c=><option key={c} value={c}>{c}</option>)}</select><select style={{...style,flex:1}} value={sub} onChange={e=>onChange(cat+" > "+e.target.value)}>{subs.map(s=><option key={s} value={s}>{s}</option>)}</select></div>}
-function DescInput({value,onChange,suggestions,style,className}){const[show,setShow]=useState(false);const[filtered,setFiltered]=useState([]);const handleChange=v=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else setShow(false)};return <div style={{position:"relative"}}><input style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>{show&&<div className="suggestions-list">{filtered.map((s,i)=><button key={i} onMouseDown={e=>{e.preventDefault();onChange(s);setShow(false)}}>{s}</button>)}</div>}</div>}
+function DescInput({value,onChange,onSelect,suggestions,style,className}){const[show,setShow]=useState(false);const[filtered,setFiltered]=useState([]);const handleChange=v=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else setShow(false)};return <div style={{position:"relative"}}><input style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>{show&&<div className="suggestions-list">{filtered.map((s,i)=><button key={i} onMouseDown={e=>{e.preventDefault();if(onSelect)onSelect(s);else onChange(s);setShow(false)}}>{s}</button>)}</div>}</div>}
 /* Money input: types digits, formats as currency with comma. Internal value is string number like "10.00" */
 function MoneyInput({value,onChange,style,className}){
   // value is the form's amount string like "10.5". Display as "10,50" formatted.
@@ -129,7 +129,7 @@ function App(){
     if(touchStart.current===null)return;
     const diff=touchStart.current-e.changedTouches[0].clientX;
     touchStart.current=null;
-    if(Math.abs(diff)>120){diff>0?navMonth(1):navMonth(-1)}
+    if(diff>80){navMonth(1)}else if(diff<-140){navMonth(-1)}
   };
 
   // Balance mode: "full" = end of month, "today" = up to today
@@ -150,6 +150,7 @@ function App(){
   const cardAccts=useMemo(()=>myAccounts.filter(a=>a.type==="card"),[myAccounts]);
   const curAcct=accounts.find(a=>a.id===selAcctId)||null;
   const allDescriptions=useMemo(()=>[...new Set(txs.map(t=>t.description).filter(Boolean))],[txs]);
+  const descCatMap=useMemo(()=>{const m={};txs.forEach(t=>{if(t.description&&t.category)m[t.description]=t.category});return m},[txs]);
   const getProfName=acct=>{const pr=(profiles||[]).find(p=>p.id===acct.profileId);return pr?pr.name:""};
   const navMonth=d=>setMonth(p=>{let m=p.m+d,y=p.y;if(m<0){m=11;y--}else if(m>11){m=0;y++}return{m,y}});
 
@@ -216,6 +217,33 @@ function App(){
         }
         // "all" falls through to normal edit
       }
+      // Installment scope handling
+      if(orig.groupId&&recurScope){
+        const editFields={};
+        ["description","amount","category","dueDate"].forEach(k=>{if(clean[k]!==undefined)editFields[k]=clean[k]});
+        if(clean.amount!==undefined)editFields.instUnitAmount=clean.amount;
+        if(recurScope==="instThis"){
+          // Edit only this installment
+          let updated=p.map(t=>t.id===id?{...t,...editFields}:t);
+          return updated.sort((a,b)=>a.date.localeCompare(b.date));
+        }
+        if(recurScope==="instForward"){
+          // Edit this and all future installments in the group
+          let updated=p.map(t=>{
+            if(t.groupId===orig.groupId&&t.instNum>=orig.instNum)return{...t,...editFields};
+            return t;
+          });
+          return updated.sort((a,b)=>a.date.localeCompare(b.date));
+        }
+        if(recurScope==="instAll"){
+          // Edit all installments in the group
+          let updated=p.map(t=>{
+            if(t.groupId===orig.groupId)return{...t,...editFields};
+            return t;
+          });
+          return updated.sort((a,b)=>a.date.localeCompare(b.date));
+        }
+      }
       if(orig.isRecurring&&clean.paid!==undefined){
         const pm=orig.paidMonths?[...orig.paidMonths]:[];
         if(clean.paid&&!pm.includes(mKey))pm.push(mKey);
@@ -256,6 +284,14 @@ function App(){
         return u.sort((a,b)=>a.date.localeCompare(b.date));
       }
       // "all" falls through to normal move
+    }
+    // Move all installments in group
+    if(t.groupId){
+      let u=p.map(x=>x.groupId===t.groupId?{...x,accountId:nid}:x);
+      // Update mirrors
+      const groupIds=p.filter(x=>x.groupId===t.groupId).map(x=>x.id);
+      u=u.map(x=>{if(x._mirrorOf&&groupIds.includes(x._mirrorOf))return{...x,fromAccountId:nid};return x});
+      return u;
     }
     let u=p.map(x=>x.id===id?{...x,accountId:nid}:x);
     if(t.type==="transfer")u=u.map(x=>x._mirrorOf===id?{...x,fromAccountId:nid}:x);
@@ -298,6 +334,15 @@ function App(){
         items.push({...t,...overrides,accountId:acctId,date:overrides.date||defaultDate,_virtual:true,_recurPaid:isPd,_movedFrom:t.accountId});
       }
     });
+    // Sort: for cards, paid on top then unpaid; for banks, by date
+    if(isCard){
+      return items.sort((a,b)=>{
+        const aPaid=a._virtual&&a.isRecurring?a._recurPaid:a.paid;
+        const bPaid=b._virtual&&b.isRecurring?b._recurPaid:b.paid;
+        if(aPaid&&!bPaid)return -1;if(!aPaid&&bPaid)return 1;
+        return a.date.localeCompare(b.date);
+      });
+    }
     return items.sort((a,b)=>a.date.localeCompare(b.date));
   },[txs,accounts,mKey,month]);
 
@@ -514,7 +559,7 @@ function App(){
               </div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:col,textDecoration:isPaid?"line-through":"none"}}>{isIn?"+":"−"} {fmt(t.amount)}</div>
+              <div style={{fontSize:13,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",color:col}}>{isIn?"+":"−"} {fmt(t.amount)}</div>
               {running!==null&&<div style={{fontSize:9,color:C.textTer,fontFamily:"'JetBrains Mono',monospace",marginTop:1}}>Saldo: {fmt(running)}</div>}
             </div>
           </div>
@@ -525,7 +570,7 @@ function App(){
       <button style={ST.fab} onClick={()=>setModal("addTx")}><IcoPlus/> Nova Transação</button>
 
       <Modal open={modal==="addTx"||modal==="editTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={modal==="editTx"?"Editar Transação":"Nova Transação"}>
-        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} onSubmit={(d,rs)=>editItem?updateTx(editItem.id,d,rs):addTx(d)}/>
+        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>editItem?updateTx(editItem.id,d,editItem._editScope):addTx(d)}/>
       </Modal>
 
       {/* Transaction detail popup */}
@@ -560,6 +605,7 @@ function App(){
               }}><IcoMove/> Mover</button>}
               <button style={{...ST.scopeBtn,flex:1,justifyContent:"center",borderColor:C.blue}} onClick={()=>{
                 if(isRV)setModal("editRecurScope");
+                else if(ei.groupId)setModal("editInstScope");
                 else setModal("editTx");
               }}><IcoEdit/> Editar</button>
               <button style={{...ST.scopeBtn,flex:1,justifyContent:"center",borderColor:C.red,color:C.red}} onClick={()=>{
@@ -598,8 +644,18 @@ function App(){
           <button style={{...ST.scopeBtn,borderColor:C.blue}} onClick={()=>{setModal("editTxScoped");setEditItem({...editItem,_editScope:"all"})}}><span style={{color:C.blue,fontWeight:700}}>✎</span> Editar todas desde o início</button>
         </div>
       </Modal>
+
+      {/* Edit installment scope modal */}
+      <Modal open={modal==="editInstScope"} onClose={()=>{setModal(null);setEditItem(null)}} title="Editar Parcela">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{color:C.textSec,fontSize:13}}><strong style={{color:C.text}}>{editItem?.description}</strong> — Parcela {editItem?.instNum}/{editItem?.instTotal}</p>
+          <button style={{...ST.scopeBtn,borderColor:C.amber}} onClick={()=>{setModal("editTx");setEditItem({...editItem,_editScope:"instThis"})}}><span style={{color:C.amber,fontWeight:700}}>1x</span> Editar apenas esta parcela ({editItem?.instNum}/{editItem?.instTotal})</button>
+          <button style={{...ST.scopeBtn,borderColor:"#ea580c"}} onClick={()=>{setModal("editTx");setEditItem({...editItem,_editScope:"instForward"})}}><span style={{color:"#ea580c",fontWeight:700}}>→</span> Editar a partir desta parcela</button>
+          <button style={{...ST.scopeBtn,borderColor:C.blue}} onClick={()=>{setModal("editTx");setEditItem({...editItem,_editScope:"instAll"})}}><span style={{color:C.blue,fontWeight:700}}>✎</span> Editar todas as parcelas</button>
+        </div>
+      </Modal>
       <Modal open={modal==="editTxScoped"} onClose={()=>{setModal(null);setEditItem(null)}} title="Editar Transação">
-        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} onSubmit={(d)=>updateTx(editItem.id,d,editItem?._editScope)}/>
+        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>updateTx(editItem.id,d,editItem?._editScope)}/>
       </Modal>
 
       {/* Delete modals */}
@@ -627,7 +683,7 @@ function ProfileForm({onSubmit}){const[name,setName]=useState("");const[color,se
 
 function AcctForm({type,usedColors,onSubmit,initial}){const[name,setName]=useState(initial?.name||"");const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));const[color,setColor]=useState(initial?.color||avail[0]||ACCT_COLORS[0]);return <div style={{display:"flex",flexDirection:"column",gap:14}}><Field label="Nome"><input style={ST.input} placeholder={type==="bank"?"Ex: Nubank":"Ex: Visa Platinum"} value={name} onChange={e=>setName(e.target.value)}/></Field><Field label="Cor"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{ACCT_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid "+C.text:"3px solid transparent",cursor:"pointer"}}/>)}</div></Field><button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type})}>{initial?"Salvar":"Criar"} {type==="bank"?"Conta":"Cartão"}</button></div>}
 
-function TxForm({initial,account,allAccounts,profiles,descriptions,onSubmit}){
+function TxForm({initial,account,allAccounts,profiles,descriptions,descCatMap,onSubmit}){
   const isBank=account?.type==="bank";
   const[form,setForm]=useState(()=>{if(initial)return{...initial,amount:String(initial.amount)};return{accountId:account?.id||"",date:td(),description:"",category:"Outros > Outros",amount:"",type:isBank?"expense":"expense",toAccountId:"",dueDate:"",installments:1,isRecurring:false,paid:false}});
   const[tried,setTried]=useState(false);
@@ -649,7 +705,7 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,onSubmit}){
     </div>}
     {form.type==="transfer"&&<Field label="Destino" error={errs.toAccountId}><select style={ST.input} className={errs.toAccountId?"field-error":""} value={form.toAccountId} onChange={e=>set("toAccountId",e.target.value)}><option value="">Selecione...</option>{others.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>}
     <Field label="Data"><input type="date" style={ST.input} value={form.date} onChange={e=>set("date",e.target.value)}/></Field>
-    <Field label="Descrição" error={errs.description}><DescInput style={ST.input} className={errs.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} suggestions={descriptions}/></Field>
+    <Field label="Descrição" error={errs.description}><DescInput style={ST.input} className={errs.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} onSelect={v=>{set("description",v);if(descCatMap&&descCatMap[v])set("category",descCatMap[v])}} suggestions={descriptions}/></Field>
     <Field label={initial?.instNum?("Valor parcela "+initial.instNum+"/"+initial.instTotal+" (R$)"):"Valor "+(form.installments>1?"da parcela ":"")+"(R$)"} error={errs.amount}><MoneyInput style={ST.input} className={errs.amount?"field-error":""} value={form.amount} onChange={v=>set("amount",v)}/></Field>
     <Field label="Categoria"><CatSelect value={form.category} onChange={v=>set("category",v)} style={ST.input}/></Field>
     {!isBank&&<Field label="Data de Vencimento" error={errs.dueDate}><input type="date" style={ST.input} className={errs.dueDate?"field-error":""} value={form.dueDate} onChange={e=>set("dueDate",e.target.value)}/></Field>}
