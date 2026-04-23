@@ -169,12 +169,11 @@ function App(){
     if(tx.installments>1){
       const gid=uid();
       for(let i=0;i<tx.installments;i++){
-        const d=new Date(tx.date+"T12:00:00");d.setMonth(d.getMonth()+i);
-        const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+        // date stays the same (original purchase date), only dueDate shifts monthly
         let instDD="";if(tx.dueDate){const dd=new Date(tx.dueDate+"T12:00:00");dd.setMonth(dd.getMonth()+i);instDD=dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0")}
         const mainId=uid();
-        batch.push({id:mainId,accountId:tx.accountId,date:ds,description:tx.description,category:tx.category,amount:tx.amount,type:tx.type,dueDate:instDD,installments:1,isRecurring:false,paid:false,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount,toAccountId:tx.toAccountId||""});
-        if(tx.type==="transfer"&&tx.toAccountId){batch.push({id:uid(),accountId:tx.toAccountId,date:ds,description:tx.description,category:"Finanças > Transferência",amount:tx.amount,type:"transfer_in",fromAccountId:tx.accountId,installments:1,isRecurring:false,dueDate:instDD,paid:false,_mirrorOf:mainId,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount})}
+        batch.push({id:mainId,accountId:tx.accountId,date:tx.date,description:tx.description,category:tx.category,amount:tx.amount,type:tx.type,dueDate:instDD,installments:1,isRecurring:false,paid:false,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount,toAccountId:tx.toAccountId||""});
+        if(tx.type==="transfer"&&tx.toAccountId){batch.push({id:uid(),accountId:tx.toAccountId,date:tx.date,description:tx.description,category:"Finanças > Transferência",amount:tx.amount,type:"transfer_in",fromAccountId:tx.accountId,installments:1,isRecurring:false,dueDate:instDD,paid:false,_mirrorOf:mainId,groupId:gid,instNum:i+1,instTotal:tx.installments,instUnitAmount:tx.amount})}
       }
     } else {
       const mainId=uid();
@@ -219,26 +218,28 @@ function App(){
       }
       // Installment scope handling
       if(orig.groupId&&recurScope){
-        const editFields={};
-        ["description","amount","category","dueDate"].forEach(k=>{if(clean[k]!==undefined)editFields[k]=clean[k]});
-        if(clean.amount!==undefined)editFields.instUnitAmount=clean.amount;
         if(recurScope==="instThis"){
-          // Edit only this installment
+          // Edit only this installment - all fields allowed
+          const editFields={};
+          ["description","amount","category","dueDate"].forEach(k=>{if(clean[k]!==undefined)editFields[k]=clean[k]});
+          if(clean.amount!==undefined)editFields.instUnitAmount=clean.amount;
           let updated=p.map(t=>t.id===id?{...t,...editFields}:t);
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
         }
+        // For forward/all: do NOT propagate date/dueDate (each installment has its own)
+        const groupFields={};
+        ["description","amount","category"].forEach(k=>{if(clean[k]!==undefined)groupFields[k]=clean[k]});
+        if(clean.amount!==undefined)groupFields.instUnitAmount=clean.amount;
         if(recurScope==="instForward"){
-          // Edit this and all future installments in the group
           let updated=p.map(t=>{
-            if(t.groupId===orig.groupId&&t.instNum>=orig.instNum)return{...t,...editFields};
+            if(t.groupId===orig.groupId&&t.instNum>=orig.instNum)return{...t,...groupFields};
             return t;
           });
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
         }
         if(recurScope==="instAll"){
-          // Edit all installments in the group
           let updated=p.map(t=>{
-            if(t.groupId===orig.groupId)return{...t,...editFields};
+            if(t.groupId===orig.groupId)return{...t,...groupFields};
             return t;
           });
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
@@ -476,8 +477,8 @@ function App(){
         {cardAccts.length===0&&<p style={ST.empty}>Toque + para adicionar</p>}
         {cardAccts.map(a=>{const mT=getMonthTxs(a.id);const sp=mT.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);const est=mT.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);const pd=mT.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);const fat=Math.max(0,sp-est);
           return <div key={a.id} style={{...ST.aCard,borderLeftColor:a.color}} onClick={()=>{setSelAcctId(a.id);pushView("detail")}}>
-            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600,color:C.text}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:C.amber}}>{fmt(fat)}</span></div>
-            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Pago: {fmt(pd)}</span><span style={{color:fat-pd>0?C.red:C.textSec}}>Resta: {fmt(Math.max(0,fat-pd))}</span></div>
+            <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600,color:C.text}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:fat-pd>0?C.red:C.green}}>{fmt(Math.max(0,fat-pd))}</span></div>
+            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.red}}>Gastos: {fmt(sp)}</span><span style={{color:C.green}}>Pago: {fmt(pd)}</span></div>
           </div>})}</div>
 
       <Modal open={modal==="newProfile"} onClose={()=>setModal(null)} title="Novo Perfil"><ProfileForm onSubmit={addProfile}/></Modal>
