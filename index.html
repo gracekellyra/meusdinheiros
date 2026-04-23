@@ -407,7 +407,7 @@ function App(){
     },0);
   },[txs,mKey,month]);
 
-  const searchResults=useMemo(()=>{if(!searchQ||searchQ.length<2)return[];const q=searchQ.toLowerCase();return txs.filter(t=>t.description?.toLowerCase().includes(q)||t.category?.toLowerCase().includes(q)).slice(0,30)},[txs,searchQ]);
+  const searchResults=useMemo(()=>{if(!searchQ||searchQ.length<2)return[];const q=searchQ.toLowerCase();const qNum=parseFloat(searchQ.replace(",","."));return txs.filter(t=>t.description?.toLowerCase().includes(q)||t.category?.toLowerCase().includes(q)||(!isNaN(qNum)&&t.amount===qNum)||String(t.amount).replace(".",",").includes(searchQ)).slice(0,30)},[txs,searchQ]);
 
   /* Helper: get tx display color */
   const txColor=(t)=>{
@@ -462,7 +462,7 @@ function App(){
       {(bankAccts.length>0||cardAccts.length>0)&&(()=>{const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type==="expense"||t.type==="transfer").reduce((ss,t)=>ss+t.amount,0);const est=m.filter(t=>t.type==="income").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-est-pd)},0);const net=tB-tC;
         return <div style={{margin:"0 16px 14px",padding:16,background:C.card,borderRadius:14,border:"1px solid "+C.cardBorder,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:C.textSec,textTransform:"uppercase"}}>{balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Total"}</span><span style={{fontSize:22,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:net>=0?C.green:C.red}}>{fmt(net)}</span></div>
-          <div style={{display:"flex",gap:16,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Contas: {fmt(tB)}</span><span style={{color:C.amber}}>Cartões: -{fmt(tC)}</span></div>
+          <div style={{display:"flex",gap:16,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.green}}>Contas: {fmt(tB)}</span><span style={{color:tC>0?C.amber:C.green}}>Cartões: -{fmt(tC)}</span></div>
         </div>})()}
 
       <div style={ST.sec}><div style={ST.secH}><span style={{color:C.blue,display:"flex"}}><IcoBank/></span><h2 style={{fontSize:16,fontWeight:700,flex:1,color:C.text}}>Contas Bancárias</h2><button style={ST.addSm} onClick={()=>setModal("newBank")}><IcoPlus/></button></div>
@@ -478,7 +478,7 @@ function App(){
         {cardAccts.map(a=>{const mT=getMonthTxs(a.id);const sp=mT.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);const est=mT.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);const pd=mT.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);const fat=Math.max(0,sp-est);
           return <div key={a.id} style={{...ST.aCard,borderLeftColor:a.color}} onClick={()=>{setSelAcctId(a.id);pushView("detail")}}>
             <div style={ST.aRow}><span style={{fontSize:15,fontWeight:600,color:C.text}}>{a.name}</span><span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:fat-pd>0?C.red:C.green}}>{fmt(Math.max(0,fat-pd))}</span></div>
-            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:C.red}}>Gastos: {fmt(sp)}</span><span style={{color:C.green}}>Pago: {fmt(pd)}</span></div>
+            <div style={{display:"flex",gap:16,marginTop:6,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}><span style={{color:sp>0?C.red:C.green}}>Gastos: {fmt(sp)}</span><span style={{color:C.green}}>Pago: {fmt(pd)}</span></div>
           </div>})}</div>
 
       <Modal open={modal==="newProfile"} onClose={()=>setModal(null)} title="Novo Perfil"><ProfileForm onSubmit={addProfile}/></Modal>
@@ -518,7 +518,7 @@ function App(){
 
       <div style={{display:"flex",gap:6,padding:"0 16px 10px",flexWrap:"wrap"}}>
         {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label={balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Final"} value={fmt(getBankBal(selAcctId))} color={curAcct?.color||C.blue}/></>
-        :<><SumCard label="Fatura" value={fmt(cFatura)} color={C.amber}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cFatura-cPd))} color={cFatura-cPd>0?C.red:C.green}/></>}
+        :<><SumCard label="Fatura" value={fmt(cFatura)} color={cFatura>0?C.amber:C.green}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cFatura-cPd))} color={cFatura-cPd>0?C.red:C.green}/></>}
       </div>
 
       {isBank&&prevBal!==0&&<div style={{fontSize:12,color:C.textSec,padding:"0 20px 10px",fontFamily:"'JetBrains Mono',monospace"}}>Saldo anterior: <strong>{fmt(prevBal)}</strong></div>}
