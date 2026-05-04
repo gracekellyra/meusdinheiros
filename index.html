@@ -50,7 +50,7 @@ const ACCT_COLORS=["#6366f1","#2563eb","#0891b2","#16a34a","#d97706","#dc2626","
 const PROF_COLORS=["#6366f1","#2563eb","#16a34a","#dc2626"];
 
 const fmt=(v)=>{try{return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}catch{return"R$ 0,00"}};
-const td=()=>new Date().toISOString().split("T")[0];
+const td=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const STORE_KEY="financas_app_data";
 const DD={profiles:[],accounts:[],txs:[],curProfileId:null};
@@ -169,7 +169,7 @@ function MoneyInput({value,onChange,style,className}){
           <button style={numS} onClick={()=>press("2")}>2</button>
           <button style={numS} onClick={()=>press("3")}>3</button>
           <button style={opS} onClick={()=>press("-")}>−</button>
-          <button style={numS} onClick={()=>press(",")}>.</button>
+          <button style={numS} onClick={()=>press(",")}>&#44;</button>
           <button style={numS} onClick={()=>press("0")}>0</button>
           <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:16}} onClick={()=>press("⌫")}>⌫</button>
           <button style={opS} onClick={()=>press("+")}>+</button>
@@ -461,23 +461,28 @@ function App(){
 
   const getBankBal=useCallback(id=>{
     const useToday=balMode==="today"&&isCurrentMonth;
-    const cutoff=useToday?new Date(now.getFullYear(),now.getMonth(),now.getDate()+1):new Date(month.y,month.m+1,1);
+    const todayDate=new Date();const todayDay=todayDate.getDate();
+    const cutoff=useToday?new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDay+1):new Date(month.y,month.m+1,1);
     const cutoffS=cutoff.getFullYear()+"-"+String(cutoff.getMonth()+1).padStart(2,"0")+"-"+String(cutoff.getDate()).padStart(2,"0");
     return txs.filter(t=>t.accountId===id).reduce((s,t)=>{
       const baseV=(t.type==="income"||t.type==="transfer_in")?1:(t.type==="expense"||t.type==="transfer")?-1:0;
       if(baseV===0)return s;
       if(t.isRecurring){
         const st2=new Date(t.date+"T12:00:00");if(st2>=cutoff)return s;
-        let el=cutoff;if(useToday){el=new Date(month.y,month.m+1,1)}
+        let el=useToday?cutoff:new Date(month.y,month.m+1,1);
         if(t.endDate){const ed=new Date(t.endDate+"T12:00:00");if(ed<st2)return s;const en=new Date(ed.getFullYear(),ed.getMonth()+1,1);if(en<el)el=en}
         let total=0;
         const d=new Date(st2.getFullYear(),st2.getMonth(),1);
         while(d<el){
           const mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
           if(!(t.excludedMonths&&t.excludedMonths.includes(mk))){
-            // Check if this month was moved away
             const ov=t.monthOverrides&&t.monthOverrides[mk]?t.monthOverrides[mk]:null;
             if(!(ov&&ov._movedTo)){
+              // In "today" mode for current month, check if recurring day has passed
+              if(useToday&&d.getFullYear()===todayDate.getFullYear()&&d.getMonth()===todayDate.getMonth()){
+                const recurDay=st2.getDate();
+                if(recurDay>todayDay){d.setMonth(d.getMonth()+1);continue}
+              }
               const monthAmount=ov&&ov.amount!==undefined?ov.amount:t.amount;
               total+=baseV*monthAmount;
             }
@@ -657,7 +662,7 @@ function App(){
               const ei=isRecurVirtual?{...t,paid:t._recurPaid}:t;
               setEditItem(ei);setModal("txDetail");
             }}>
-            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
+            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();e.preventDefault();if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
             <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{minWidth:0,flex:1}}>
@@ -683,7 +688,7 @@ function App(){
       <button style={ST.fab} onClick={()=>setModal("addTx")}><IcoPlus/> Nova Transação</button>
 
       <Modal open={modal==="addTx"||modal==="editTx"} onClose={()=>{setModal(null);setEditItem(null)}} title={modal==="editTx"?"Editar Transação":"Nova Transação"}>
-        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>editItem?updateTx(editItem.id,d,editItem._editScope):addTx(d)}/>
+        <TxForm key={modal+"-"+(editItem?.id||"new")+"-"+(editItem?._editScope||"")} initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>editItem?updateTx(editItem.id,d,editItem._editScope):addTx(d)}/>
       </Modal>
 
       {/* Transaction detail popup */}
@@ -768,7 +773,7 @@ function App(){
         </div>
       </Modal>
       <Modal open={modal==="editTxScoped"} onClose={()=>{setModal(null);setEditItem(null)}} title="Editar Transação">
-        <TxForm initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>updateTx(editItem.id,d,editItem?._editScope)}/>
+        <TxForm key={"scoped-"+(editItem?.id||"")+(editItem?._editScope||"")} initial={editItem} account={curAcct} allAccounts={accounts} profiles={profiles} descriptions={allDescriptions} descCatMap={descCatMap} onSubmit={(d)=>updateTx(editItem.id,d,editItem?._editScope)}/>
       </Modal>
 
       {/* Delete modals */}
@@ -822,6 +827,7 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,descCatMap,on
       <Field label="Origem" error={errs.accountId}><select style={ST.input} className={errs.accountId?"field-error":""} value={form.accountId} onChange={e=>{set("accountId",e.target.value);if(form.toAccountId===e.target.value)set("toAccountId","")}}><option value="">Selecione...</option>{allAccounts.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>
       <Field label="Destino" error={errs.toAccountId}><select style={ST.input} className={errs.toAccountId?"field-error":""} value={form.toAccountId} onChange={e=>set("toAccountId",e.target.value)}><option value="">Selecione...</option>{transferDests.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>
     </>}
+    {form.type!=="transfer"&&<Field label={isBank?"Conta":"Cartão"}><select style={ST.input} value={form.accountId} onChange={e=>set("accountId",e.target.value)}>{allAccounts.filter(a=>isBank?a.type==="bank":a.type==="card").map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>}
     <Field label="Data"><input type="date" style={ST.input} value={form.date} onChange={e=>set("date",e.target.value)}/></Field>
     <Field label="Descrição" error={errs.description}><DescInput style={ST.input} className={errs.description?"field-error":""} value={form.description} onChange={v=>set("description",v)} onSelect={v=>{set("description",v);if(descCatMap&&descCatMap[v])set("category",descCatMap[v])}} suggestions={descriptions}/></Field>
     <Field label={initial?.instNum?("Valor parcela "+initial.instNum+"/"+initial.instTotal+" (R$)"):"Valor "+(form.installments>1?"da parcela ":"")+"(R$)"} error={errs.amount}><MoneyInput style={ST.input} className={errs.amount?"field-error":""} value={form.amount} onChange={v=>set("amount",v)}/></Field>
