@@ -413,7 +413,23 @@ function App(){
   });setModal(null);setEditItem(null)},[mKey,month]);
   const togglePaid=useCallback(id=>{setTxs(p=>{const t=p.find(x=>x.id===id);if(!t)return p;let u=p.map(x=>x.id===id?{...x,paid:!x.paid}:x);if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid)u=u.map(x=>x.id===mid.id?{...x,paid:!t.paid}:x)}if(t.type==="transfer_in"&&t._mirrorOf)u=u.map(x=>x.id===t._mirrorOf?{...x,paid:!t.paid}:x);return u})},[]);
   const toggleRecurPaid=useCallback((id,mk)=>{setTxs(p=>{const t=p.find(x=>x.id===id);if(!t)return p;const pm=t.paidMonths?[...t.paidMonths]:[];const np=pm.includes(mk);const nPm=np?pm.filter(x=>x!==mk):[...pm,mk];let u=p.map(x=>x.id===id?{...x,paidMonths:nPm}:x);if(t.type==="transfer"){const mid=p.find(x=>x._mirrorOf===id);if(mid){const mpm=mid.paidMonths?[...mid.paidMonths]:[];const mn=np?mpm.filter(x=>x!==mk):(mpm.includes(mk)?mpm:[...mpm,mk]);u=u.map(x=>x.id===mid.id?{...x,paidMonths:mn}:x)}}if(t.type==="transfer_in"&&t._mirrorOf){const o=p.find(x=>x.id===t._mirrorOf);if(o){const op=o.paidMonths?[...o.paidMonths]:[];const on=np?op.filter(x=>x!==mk):(op.includes(mk)?op:[...op,mk]);u=u.map(x=>x.id===t._mirrorOf?{...x,paidMonths:on}:x)}}return u})},[]);
-  const deleteTx=useCallback((id,opts)=>{const dg=opts?.group;const rm=opts?.recurMode;setTxs(prev=>{const t=prev.find(x=>x.id===id);if(!t)return prev;if(rm&&t.isRecurring){if(rm==="all")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(rm==="this"){const excl=t.excludedMonths?[...t.excludedMonths]:[];if(!excl.includes(mKey))excl.push(mKey);return prev.map(x=>x.id===id?{...x,excludedMonths:excl}:x)}if(rm==="forward"){const pM=new Date(month.y,month.m,0);const es=pM.getFullYear()+"-"+String(pM.getMonth()+1).padStart(2,"0")+"-"+String(pM.getDate()).padStart(2,"0");return prev.map(x=>x.id===id?{...x,endDate:es}:x)}}if(dg&&t.groupId)return prev.filter(x=>x.groupId!==t.groupId);if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);return prev.filter(x=>x.id!==id)})},[mKey,month]);
+  const deleteTx=useCallback((id,opts)=>{const dg=opts?.group;const rm=opts?.recurMode;setTxs(prev=>{const t=prev.find(x=>x.id===id);if(!t)return prev;if(rm&&t.isRecurring){if(rm==="all"){// Delete original + its mirror
+    const mirrorId=prev.find(x=>x._mirrorOf===id)?.id;return prev.filter(x=>x.id!==id&&x._mirrorOf!==id&&(t._mirrorOf?x.id!==t._mirrorOf:true))}
+    if(rm==="this"){const excl=t.excludedMonths?[...t.excludedMonths]:[];if(!excl.includes(mKey))excl.push(mKey);let u=prev.map(x=>x.id===id?{...x,excludedMonths:excl}:x);// Also exclude mirror
+    const mirror=prev.find(x=>x._mirrorOf===id);if(mirror){const me=mirror.excludedMonths?[...mirror.excludedMonths]:[];if(!me.includes(mKey))me.push(mKey);u=u.map(x=>x.id===mirror.id?{...x,excludedMonths:me}:x)}
+    if(t._mirrorOf){const orig=prev.find(x=>x.id===t._mirrorOf);if(orig){const oe=orig.excludedMonths?[...orig.excludedMonths]:[];if(!oe.includes(mKey))oe.push(mKey);u=u.map(x=>x.id===t._mirrorOf?{...x,excludedMonths:oe}:x)}}
+    return u}
+    if(rm==="forward"){const pM=new Date(month.y,month.m,0);const es=pM.getFullYear()+"-"+String(pM.getMonth()+1).padStart(2,"0")+"-"+String(pM.getDate()).padStart(2,"0");let u=prev.map(x=>x.id===id?{...x,endDate:es}:x);// Also end mirror
+    const mirror=prev.find(x=>x._mirrorOf===id);if(mirror)u=u.map(x=>x.id===mirror.id?{...x,endDate:es}:x);
+    if(t._mirrorOf)u=u.map(x=>x.id===t._mirrorOf?{...x,endDate:es}:x);
+    return u}}
+    // Group delete: remove all in group AND their mirrors
+    if(dg&&t.groupId){const gids=prev.filter(x=>x.groupId===t.groupId).map(x=>x.id);return prev.filter(x=>x.groupId!==t.groupId&&!gids.includes(x._mirrorOf))}
+    // Single transfer: delete both sides
+    if(t.type==="transfer")return prev.filter(x=>x.id!==id&&x._mirrorOf!==id);
+    if(t.type==="transfer_in"&&t._mirrorOf)return prev.filter(x=>x.id!==id&&x.id!==t._mirrorOf);
+    // Single non-transfer with mirror (edge case)
+    return prev.filter(x=>x.id!==id&&x._mirrorOf!==id)})},[mKey,month]);
 
   /* Per-account */
   const getMonthTxs=useCallback(acctId=>{
