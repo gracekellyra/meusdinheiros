@@ -1256,7 +1256,7 @@ function App() {
     if(!confirm("Tem certeza que deseja excluir este perfil?\nTodas as contas, cartões e transações serão apagados."))return;
     const aIds = accounts.filter(a => a.profileId === id).map(a => a.id);
     setAccounts(p => p.filter(a => a.profileId !== id));
-    setTxs(p => p.filter(t => !aIds.includes(t.accountId)));
+    setTxs(p => p.filter(t => !aIds.includes(t.accountId) && !aIds.includes(t.toAccountId) && !aIds.includes(t.fromAccountId)));
     setProfiles(p => p.filter(x => x.id !== id));
     if (curProfileId === id) {
       const rem = profiles.filter(x => x.id !== id);
@@ -1400,7 +1400,7 @@ function App() {
   const deleteAccount = id => {
     if (!confirm("Excluir conta e todas transações?")) return;
     setAccounts(p => p.filter(a => a.id !== id));
-    setTxs(p => p.filter(t => t.accountId !== id && t.toAccountId !== id));
+    setTxs(p => p.filter(t => t.accountId !== id && t.toAccountId !== id && t.fromAccountId !== id));
     if (selAcctId === id) setViewStack(["home"]);
   };
 
@@ -3947,6 +3947,12 @@ function ProfileForm({
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState(PROF_COLORS[0]);
+  const [tried, setTried] = useState(false);
+  const handleSubmit = () => {
+    setTried(true);
+    if (!name.trim()) return;
+    onSubmit({ name: name.trim(), color });
+  };
   return /*#__PURE__*/h("div", {
     style: {
       display: "flex",
@@ -3954,12 +3960,15 @@ function ProfileForm({
       gap: 14
     }
   }, /*#__PURE__*/h(Field, {
-    label: "Nome"
+    label: "Nome",
+    error: tried && !name.trim() ? "Digite um nome" : null
   }, /*#__PURE__*/h("input", {
     style: ST.input,
+    className: tried && !name.trim() ? "field-error" : "",
     placeholder: "Ex: Pessoal",
     value: name,
-    onChange: e => setName(e.target.value)
+    onChange: e => setName(e.target.value),
+    autoFocus: true
   })), /*#__PURE__*/h(Field, {
     label: "Cor"
   }, /*#__PURE__*/h("div", {
@@ -3979,12 +3988,8 @@ function ProfileForm({
       cursor: "pointer"
     }
   })))), /*#__PURE__*/h("button", {
-    style: ST.submitBtn,
-    disabled: !name.trim(),
-    onClick: () => onSubmit({
-      name: name.trim(),
-      color
-    })
+    style: {...ST.submitBtn, opacity: tried && !name.trim() ? 0.5 : 1},
+    onClick: handleSubmit
   }, "Criar Perfil"));
 }
 function AcctForm({
@@ -3997,25 +4002,28 @@ function AcctForm({
   const avail = ACCT_COLORS.filter(c => !usedColors.includes(c));
   const [color, setColor] = useState(initial?.color || avail[0] || ACCT_COLORS[0]);
   const [dueDay, setDueDay] = useState(initial?.dueDay || "");
+  const [tried, setTried] = useState(false);
+  const handleSubmit = () => {
+    setTried(true);
+    if (!name.trim()) return;
+    onSubmit({name: name.trim(), color, type, ...(type === "card" ? {dueDay: parseInt(dueDay) || 0} : {})});
+  };
   return /*#__PURE__*/h("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 14
-    }
+    style: {display: "flex", flexDirection: "column", gap: 14}
   }, /*#__PURE__*/h(Field, {
-    label: "Nome"
+    label: "Nome",
+    error: tried && !name.trim() ? "Digite um nome" : null
   }, /*#__PURE__*/h("input", {
     style: ST.input,
+    className: tried && !name.trim() ? "field-error" : "",
     placeholder: type === "bank" ? "Ex: Nubank" : "Ex: Visa Platinum",
     value: name,
-    onChange: e => setName(e.target.value)
+    onChange: e => setName(e.target.value),
+    autoFocus: true
   })), type === "card" && /*#__PURE__*/h(Field, {
     label: "Dia de vencimento da fatura"
   }, /*#__PURE__*/h("input", {
-    type: "number",
-    min: "1",
-    max: "31",
+    type: "number", min: "1", max: "31",
     style: ST.input,
     placeholder: "Ex: 15",
     value: dueDay,
@@ -4023,33 +4031,14 @@ function AcctForm({
   })), /*#__PURE__*/h(Field, {
     label: "Cor"
   }, /*#__PURE__*/h("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
+    style: {display: "flex", gap: 8, flexWrap: "wrap"}
   }, ACCT_COLORS.map(c => /*#__PURE__*/h("button", {
     key: c,
     onClick: () => setColor(c),
-    style: {
-      width: 32,
-      height: 32,
-      borderRadius: "50%",
-      background: c,
-      border: color === c ? "3px solid " + C.text : "3px solid transparent",
-      cursor: "pointer"
-    }
+    style: {width: 32, height: 32, borderRadius: "50%", background: c, border: color === c ? "3px solid " + C.text : "3px solid transparent", cursor: "pointer"}
   })))), /*#__PURE__*/h("button", {
-    style: ST.submitBtn,
-    disabled: !name.trim(),
-    onClick: () => onSubmit({
-      name: name.trim(),
-      color,
-      type,
-      ...(type === "card" ? {
-        dueDay: parseInt(dueDay) || 0
-      } : {})
-    })
+    style: {...ST.submitBtn, opacity: tried && !name.trim() ? 0.5 : 1},
+    onClick: handleSubmit
   }, initial ? "Salvar" : "Criar", " ", type === "bank" ? "Conta" : "Cartão"));
 }
 function TxForm({
