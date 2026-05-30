@@ -93,12 +93,262 @@ const THEMES = {
     badgeBg: "#1e1b3a"
   }
 };
-let C = THEMES.light;
 const getTheme = () => localStorage.getItem("financas_theme") || "light";
+let C = THEMES[getTheme()] || THEMES.light;
 const setTheme = t => {
   localStorage.setItem("financas_theme", t);
   C = THEMES[t] || THEMES.light;
+  ST = getST();
 };
+const getST = () => ({
+  app: {
+    fontFamily: "'DM Sans',sans-serif",
+    background: C.bg,
+    color: C.text,
+    minHeight: "100vh",
+    maxWidth: 520,
+    margin: "0 auto",
+    paddingBottom: 80
+  },
+  header: {
+    padding: "16px 16px 10px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  navBtn: {
+    background: "none",
+    border: "none",
+    color: C.textSec,
+    cursor: "pointer",
+    padding: 4,
+    display: "flex",
+    borderRadius: 6
+  },
+  monthLbl: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: C.text,
+    minWidth: 100,
+    textAlign: "center"
+  },
+  sec: {
+    padding: "4px 16px 14px"
+  },
+  secH: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10
+  },
+  addSm: {
+    background: C.card,
+    border: "1px solid " + C.cardBorder,
+    color: C.blue,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer"
+  },
+  aCard: {
+    background: C.card,
+    borderRadius: 10,
+    padding: "14px 16px",
+    marginBottom: 8,
+    cursor: "pointer",
+    borderLeft: "3px solid",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06)"
+  },
+  aRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  txItem: {
+    display: "flex",
+    alignItems: "center",
+    padding: "10px 8px",
+    borderRadius: 8,
+    background: C.card,
+    marginBottom: 3,
+    gap: 6,
+    transition: "opacity .2s",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
+  },
+  badge: {
+    fontSize: 9,
+    background: C.badgeBg,
+    color: C.textSec,
+    padding: "2px 5px",
+    borderRadius: 4,
+    fontWeight: 600,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 2,
+    whiteSpace: "nowrap",
+    flexShrink: 0
+  },
+  sBtn: {
+    background: "none",
+    border: "none",
+    color: C.textTer,
+    cursor: "pointer",
+    padding: 3,
+    borderRadius: 4,
+    display: "flex"
+  },
+  empty: {
+    textAlign: "center",
+    color: C.textTer,
+    padding: 28,
+    fontSize: 14
+  },
+  fab: {
+    position: "fixed",
+    bottom: 20,
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 28,
+    padding: "14px 24px",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    boxShadow: "0 4px 16px rgba(99,102,241,0.35)",
+    zIndex: 10
+  },
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: C.overlayBg,
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    zIndex: 100,
+    backdropFilter: "blur(4px)"
+  },
+  modal: {
+    background: C.card,
+    borderRadius: "20px 20px 0 0",
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "85vh",
+    overflow: "auto",
+    padding: "0 20px 24px"
+  },
+  modalH: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "18px 0 10px",
+    position: "sticky",
+    top: 0,
+    background: C.card,
+    zIndex: 1
+  },
+  iBtn: {
+    background: "none",
+    border: "none",
+    color: C.textSec,
+    cursor: "pointer",
+    padding: 4,
+    display: "flex",
+    borderRadius: 6
+  },
+  lbl: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: C.textSec,
+    textTransform: "uppercase",
+    letterSpacing: "0.5px"
+  },
+  input: {
+    background: C.inputBg,
+    border: "1px solid " + C.inputBorder,
+    borderRadius: 10,
+    padding: "11px 13px",
+    color: C.text,
+    fontSize: 15,
+    width: "100%"
+  },
+  typeBtn: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    padding: "10px 0",
+    border: "1px solid " + C.inputBorder,
+    background: C.inputBg,
+    color: C.textSec,
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all .2s"
+  },
+  submitBtn: {
+    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: "13px",
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: "pointer",
+    marginTop: 4
+  },
+  stepBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 36,
+    height: 44,
+    background: "none",
+    border: "none",
+    color: C.blue,
+    cursor: "pointer"
+  },
+  scopeBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    padding: "14px 16px",
+    background: C.inputBg,
+    border: "1.5px solid",
+    borderRadius: 10,
+    color: C.text,
+    fontSize: 14,
+    fontWeight: 500,
+    cursor: "pointer"
+  },
+  toggleBtn: {
+    padding: "6px 14px",
+    borderRadius: 8,
+    border: "1px solid " + C.cardBorder,
+    background: C.card,
+    color: C.textSec,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all .2s"
+  },
+  toggleActive: {
+    background: C.blue,
+    color: "#fff",
+    borderColor: C.blue
+  }
+});
+let ST = getST();
 const CAT_TREE = {
   "Alimentação": ["Supermercado", "Restaurante", "Delivery", "Padaria", "Feira", "Lanches", "Guloseimas", "Outros"],
   "Moradia": ["Aluguel", "Condomínio", "Energia", "Água", "Gás", "Internet", "IPTU", "Manutenção", "Outros"],
@@ -1030,7 +1280,7 @@ function App() {
   // Theme
   const [theme, setThemeState] = useState(getTheme);
   C = THEMES[theme] || THEMES.light;
-  const ST = getST();
+  ST = getST();
   useEffect(() => {
     document.body.style.background = C.bg;
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", C.bg);
@@ -4356,254 +4606,6 @@ function TxForm({
 }
 
 /* Styles - Light Theme */
-const getST = () => ({
-  app: {
-    fontFamily: "'DM Sans',sans-serif",
-    background: C.bg,
-    color: C.text,
-    minHeight: "100vh",
-    maxWidth: 520,
-    margin: "0 auto",
-    paddingBottom: 80
-  },
-  header: {
-    padding: "16px 16px 10px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  navBtn: {
-    background: "none",
-    border: "none",
-    color: C.textSec,
-    cursor: "pointer",
-    padding: 4,
-    display: "flex",
-    borderRadius: 6
-  },
-  monthLbl: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: C.text,
-    minWidth: 100,
-    textAlign: "center"
-  },
-  sec: {
-    padding: "4px 16px 14px"
-  },
-  secH: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 10
-  },
-  addSm: {
-    background: C.card,
-    border: "1px solid " + C.cardBorder,
-    color: C.blue,
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer"
-  },
-  aCard: {
-    background: C.card,
-    borderRadius: 10,
-    padding: "14px 16px",
-    marginBottom: 8,
-    cursor: "pointer",
-    borderLeft: "3px solid",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.06)"
-  },
-  aRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  txItem: {
-    display: "flex",
-    alignItems: "center",
-    padding: "10px 8px",
-    borderRadius: 8,
-    background: C.card,
-    marginBottom: 3,
-    gap: 6,
-    transition: "opacity .2s",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.04)"
-  },
-  badge: {
-    fontSize: 9,
-    background: C.badgeBg,
-    color: C.textSec,
-    padding: "2px 5px",
-    borderRadius: 4,
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 2,
-    whiteSpace: "nowrap",
-    flexShrink: 0
-  },
-  sBtn: {
-    background: "none",
-    border: "none",
-    color: C.textTer,
-    cursor: "pointer",
-    padding: 3,
-    borderRadius: 4,
-    display: "flex"
-  },
-  empty: {
-    textAlign: "center",
-    color: C.textTer,
-    padding: 28,
-    fontSize: 14
-  },
-  fab: {
-    position: "fixed",
-    bottom: 20,
-    left: "50%",
-    transform: "translateX(-50%)",
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 28,
-    padding: "14px 24px",
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    boxShadow: "0 4px 16px rgba(99,102,241,0.35)",
-    zIndex: 10
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: C.overlayBg,
-    display: "flex",
-    alignItems: "flex-end",
-    justifyContent: "center",
-    zIndex: 100,
-    backdropFilter: "blur(4px)"
-  },
-  modal: {
-    background: C.card,
-    borderRadius: "20px 20px 0 0",
-    width: "100%",
-    maxWidth: 520,
-    maxHeight: "85vh",
-    overflow: "auto",
-    padding: "0 20px 24px"
-  },
-  modalH: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "18px 0 10px",
-    position: "sticky",
-    top: 0,
-    background: C.card,
-    zIndex: 1
-  },
-  iBtn: {
-    background: "none",
-    border: "none",
-    color: C.textSec,
-    cursor: "pointer",
-    padding: 4,
-    display: "flex",
-    borderRadius: 6
-  },
-  lbl: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: C.textSec,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px"
-  },
-  input: {
-    background: C.inputBg,
-    border: "1px solid " + C.inputBorder,
-    borderRadius: 10,
-    padding: "11px 13px",
-    color: C.text,
-    fontSize: 15,
-    width: "100%"
-  },
-  typeBtn: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    padding: "10px 0",
-    border: "1px solid " + C.inputBorder,
-    background: C.inputBg,
-    color: C.textSec,
-    borderRadius: 10,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "all .2s"
-  },
-  submitBtn: {
-    background: "linear-gradient(135deg,#6366f1,#4f46e5)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 12,
-    padding: "13px",
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: "pointer",
-    marginTop: 4
-  },
-  stepBtn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 36,
-    height: 44,
-    background: "none",
-    border: "none",
-    color: C.blue,
-    cursor: "pointer"
-  },
-  scopeBtn: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    width: "100%",
-    padding: "14px 16px",
-    background: C.inputBg,
-    border: "1.5px solid",
-    borderRadius: 10,
-    color: C.text,
-    fontSize: 14,
-    fontWeight: 500,
-    cursor: "pointer"
-  },
-  toggleBtn: {
-    padding: "6px 14px",
-    borderRadius: 8,
-    border: "1px solid " + C.cardBorder,
-    background: C.card,
-    color: C.textSec,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "all .2s"
-  },
-  toggleActive: {
-    background: C.blue,
-    color: "#fff",
-    borderColor: C.blue
-  }
-});
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/h(App, null));
 
 </script>
