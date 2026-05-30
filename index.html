@@ -15,16 +15,15 @@
 <link rel="manifest" href="manifest.json">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body,#root{height:100%;width:100%;background:#f8fafc;overflow-x:hidden}
-body{font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+html,body,#root{height:100%;width:100%;overflow-x:hidden}
+body{font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;background:#f8fafc}
 input,select,button{font-family:'DM Sans',sans-serif}
 input:focus,select:focus{outline:none;border-color:#6366f1 !important}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 .field-error{border-color:#dc2626 !important;box-shadow:0 0 0 1px #dc2626}
-.suggestions-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:0 0 10px 10px;max-height:150px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
-.suggestions-list button{display:block;width:100%;padding:10px 14px;background:none;border:none;color:#1e293b;text-align:left;font-size:14px;cursor:pointer}
-.suggestions-list button:hover{background:#f1f5f9}
+.suggestions-list{position:absolute;top:100%;left:0;right:0;border-radius:0 0 10px 10px;max-height:150px;overflow-y:auto;z-index:20}
+.suggestions-list button{display:block;width:100%;padding:10px 14px;background:none;border:none;text-align:left;font-size:14px;cursor:pointer}
 </style>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(reg=>{reg.update();reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw.addEventListener('statechange',()=>{if(nw.state==='activated')window.location.reload()})})}).catch(()=>{})})}
@@ -39,9 +38,19 @@ if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.s
 const {useState,useEffect,useCallback,useMemo,useRef}=React;
 
 /* Colors: light theme */
-const C={green:"#16a34a",red:"#dc2626",purple:"#7c3aed",blue:"#2563eb",amber:"#d97706",
-  bg:"#f8fafc",card:"#ffffff",cardBorder:"#e2e8f0",text:"#1e293b",textSec:"#64748b",textTer:"#94a3b8",
-  inputBg:"#f1f5f9",inputBorder:"#e2e8f0",overlayBg:"rgba(0,0,0,0.4)"};
+const THEMES={
+  light:{green:"#16a34a",red:"#dc2626",purple:"#7c3aed",blue:"#2563eb",amber:"#d97706",
+    bg:"#f8fafc",card:"#ffffff",cardBorder:"#e2e8f0",text:"#1e293b",textSec:"#64748b",textTer:"#94a3b8",
+    inputBg:"#f1f5f9",inputBorder:"#e2e8f0",overlayBg:"rgba(0,0,0,0.4)",
+    greenBg:"#f0fdf4",redBg:"#fef2f2",purpleBg:"#f5f3ff",purpleBg2:"#ede9fe",paidBg:"#dcfce7",checkBrd:"#cbd5e1",badgeBg:"#f1f5f9"},
+  dark:{green:"#34d399",red:"#f87171",purple:"#a78bfa",blue:"#60a5fa",amber:"#fbbf24",
+    bg:"#0c0a1a",card:"#13102a",cardBorder:"#2d2a4a",text:"#e2e8f0",textSec:"#94a3b8",textTer:"#64748b",
+    inputBg:"#1e1b3a",inputBorder:"#2d2a4a",overlayBg:"rgba(0,0,0,0.7)",
+    greenBg:"#0d2a1a",redBg:"#2a0d0d",purpleBg:"#1e1535",purpleBg2:"#312e81",paidBg:"#0d2a2a",checkBrd:"#475569",badgeBg:"#1e1b3a"}
+};
+let C=THEMES.light;
+const getTheme=()=>localStorage.getItem("financas_theme")||"light";
+const setTheme=(t)=>{localStorage.setItem("financas_theme",t);C=THEMES[t]||THEMES.light};
 
 const CAT_TREE={"Alimentação":["Supermercado","Restaurante","Delivery","Padaria","Feira","Lanches","Guloseimas","Outros"],"Moradia":["Aluguel","Condomínio","Energia","Água","Gás","Internet","IPTU","Manutenção","Outros"],"Transporte":["Combustível","Estacionamento","Transporte público","Uber/99","Manutenção veículo","Seguro veículo","IPVA","Pedágio","Outros"],"Saúde":["Plano de saúde","Consulta médica","Farmácia","Dentista","Exames","Academia","Outros"],"Educação":["Escola/Faculdade","Curso online","Livros","Material escolar","Outros"],"Lazer":["Cinema/Teatro","Viagem","Streaming","Jogos","Hobby","Bares","Outros"],"Vestuário":["Roupas","Calçados","Acessórios","Outros"],"Renda":["Salário","Comissão","Freelance","Investimentos","Aluguel recebido","Vendas","Bônus","Estorno","Reembolso","13º Salário","Férias","Dividendos","Publi/Parceria","Plataformas digitais","Outros"],"Finanças":["Transferência","Empréstimo","Juros","Tarifas bancárias","Outros"],"Compras":["Eletrônicos","Móveis","Eletrodomésticos","Presentes","Outros"],"Serviços":["Assinaturas","Celular","Seguros","Contabilidade","Outros"],"Pets":["Ração","Veterinário","Acessórios","Outros"],"Pessoal":["Beleza","Cuidados pessoais","Outros"],"Marketing Digital":["Tráfego pago","Ferramentas","Plataformas","Produção de conteúdo","Equipamentos","Assessoria","Cursos","Comissão plataforma","Outros"],"Outros":["Outros"]};
 const CAT_KEYS=Object.keys(CAT_TREE);
@@ -82,7 +91,7 @@ function Modal({open,onClose,title,children}){if(!open)return null;return <div s
 function Field({label,children,error}){return <div style={{display:"flex",flexDirection:"column",gap:5}}><label style={ST.lbl}>{label}</label>{children}{error&&<span style={{fontSize:11,color:C.red}}>{error}</span>}</div>}
 function SumCard({label,value,color}){return <div style={{flex:"1 1 130px",background:C.card,borderRadius:10,padding:"10px 12px",display:"flex",flexDirection:"column",gap:3,borderLeft:"3px solid "+color,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}><span style={{fontSize:10,fontWeight:600,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.5px"}}>{label}</span><span style={{fontSize:15,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color}}>{value}</span></div>}
 function CatSelect({value,onChange,style}){const parts=value?value.split(" > "):["Outros","Outros"];const cat=parts[0]||"Outros";const sub=parts[1]||"Outros";const subs=CAT_TREE[cat]||["Outros"];return <div style={{display:"flex",gap:6}}><select style={{...style,flex:1}} value={cat} onChange={e=>{const c=e.target.value;onChange(c+" > "+(CAT_TREE[c]||["Outros"])[0])}}>{CAT_KEYS.map(c=><option key={c} value={c}>{c}</option>)}</select><select style={{...style,flex:1}} value={sub} onChange={e=>onChange(cat+" > "+e.target.value)}>{subs.map(s=><option key={s} value={s}>{s}</option>)}</select></div>}
-function DescInput({value,onChange,onSelect,suggestions,style,className}){const[show,setShow]=useState(false);const[filtered,setFiltered]=useState([]);const handleChange=v=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else setShow(false)};return <div style={{position:"relative"}}><input style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>{show&&<div className="suggestions-list">{filtered.map((s,i)=><button key={i} onMouseDown={e=>{e.preventDefault();if(onSelect)onSelect(s);else onChange(s);setShow(false)}}>{s}</button>)}</div>}</div>}
+function DescInput({value,onChange,onSelect,suggestions,style,className}){const[show,setShow]=useState(false);const[filtered,setFiltered]=useState([]);const handleChange=v=>{onChange(v);if(v.length>=2){const f=[...new Set(suggestions)].filter(s=>s.toLowerCase().includes(v.toLowerCase())).slice(0,6);setFiltered(f);setShow(f.length>0)}else setShow(false)};return <div style={{position:"relative"}}><input style={style} className={className} placeholder="Ex: Supermercado" value={value} onChange={e=>handleChange(e.target.value)} onFocus={()=>{if(filtered.length>0)setShow(true)}} onBlur={()=>setTimeout(()=>setShow(false),200)}/>{show&&<div className="suggestions-list" style={{background:C.card,border:"1px solid "+C.cardBorder,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>{filtered.map((s,i)=><button key={i} style={{color:C.text}} onMouseDown={e=>{e.preventDefault();if(onSelect)onSelect(s);else onChange(s);setShow(false)}}>{s}</button>)}</div>}</div>}
 /* Money input: types digits, formats as currency with comma. Internal value is string number like "10.00" */
 function MoneyInput({value,onChange,style,className}){
   const[open,setOpen]=useState(false);
@@ -175,7 +184,7 @@ function MoneyInput({value,onChange,style,className}){
 
   const btnS={display:"flex",alignItems:"center",justifyContent:"center",border:"none",borderRadius:12,fontSize:22,fontWeight:600,cursor:"pointer",height:52,fontFamily:"'JetBrains Mono',monospace"};
   const numS={...btnS,background:C.inputBg,color:C.text};
-  const opS={...btnS,background:"#ede9fe",color:C.purple};
+  const opS={...btnS,background:C.purpleBg2,color:C.purple};
   const actS={...btnS,background:C.blue,color:"#fff"};
 
   return <>
@@ -192,8 +201,8 @@ function MoneyInput({value,onChange,style,className}){
         </div>
         {/* Keypad */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-          <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:15,fontWeight:700}} onClick={()=>press("C")}>C</button>
-          <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:18}} onClick={()=>press("⌫")}>⌫</button>
+          <button style={{...btnS,background:C.redBg,color:C.red,fontSize:15,fontWeight:700}} onClick={()=>press("C")}>C</button>
+          <button style={{...btnS,background:C.redBg,color:C.red,fontSize:18}} onClick={()=>press("⌫")}>⌫</button>
           <button style={opS} onClick={()=>press("÷")}>÷</button>
           <button style={opS} onClick={()=>press("×")}>×</button>
           <button style={numS} onClick={()=>press("7")}>7</button>
@@ -207,7 +216,7 @@ function MoneyInput({value,onChange,style,className}){
           <button style={numS} onClick={()=>press("1")}>1</button>
           <button style={numS} onClick={()=>press("2")}>2</button>
           <button style={numS} onClick={()=>press("3")}>3</button>
-          <button style={{...btnS,background:"#ede9fe",color:C.purple,fontSize:18,fontWeight:700,gridRow:"span 2"}} onClick={()=>press("=")}>=</button>
+          <button style={{...btnS,background:C.purpleBg2,color:C.purple,fontSize:18,fontWeight:700,gridRow:"span 2"}} onClick={()=>press("=")}>=</button>
           <button style={numS} onClick={()=>press("0")}>0</button>
           <button style={numS} onClick={()=>press(",")}>&#44;</button>
           <button style={{...actS,fontSize:14,fontWeight:700}} onClick={()=>press("OK")}>OK</button>
@@ -220,6 +229,54 @@ function InstStepper({value,onChange,disabled}){return <div style={{display:"fle
 
 /* ═══ APP ═══ */
 function App(){
+  // Theme
+  const[theme,setThemeState]=useState(getTheme);
+  C=THEMES[theme]||THEMES.light;
+  const ST=getST();
+  useEffect(()=>{document.body.style.background=C.bg;document.querySelector('meta[name="theme-color"]')?.setAttribute("content",C.bg)},[theme]);
+  const toggleTheme=()=>{const t=theme==="light"?"dark":"light";setTheme(t);setThemeState(t)};
+
+  // PIN Lock
+  const PIN_KEY="financas_pin";
+  const hasPin=()=>!!localStorage.getItem(PIN_KEY);
+  const[locked,setLocked]=useState(hasPin());
+  const[pinInput,setPinInput]=useState("");
+  const[pinError,setPinError]=useState(false);
+  const[pinSetup,setPinSetup]=useState(null); // null | "new" | "confirm"
+  const[pinNew,setPinNew]=useState("");
+
+  const hashPin=async(p)=>{const enc=new TextEncoder().encode(p+"financas_salt_2026");const h=await crypto.subtle.digest("SHA-256",enc);return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,"0")).join("")};
+
+  const checkPin=async(p)=>{
+    const stored=localStorage.getItem(PIN_KEY);
+    const h=await hashPin(p);
+    if(h===stored){setLocked(false);setPinInput("");setPinError(false)}
+    else{setPinError(true);setPinInput("");setTimeout(()=>setPinError(false),1000)}
+  };
+
+  const savePin=async(p)=>{const h=await hashPin(p);localStorage.setItem(PIN_KEY,h)};
+  const removePin=()=>{localStorage.removeItem(PIN_KEY);alert("PIN removido!")};
+
+  const pinPress=(k)=>{
+    if(k==="⌫"){setPinInput(p=>p.slice(0,-1));return}
+    if(k==="C"){setPinInput("");return}
+    if(pinInput.length<4)setPinInput(p=>p+k);
+  };
+
+  // Auto-check when 4 digits entered
+  useEffect(()=>{
+    if(locked&&pinInput.length===4)checkPin(pinInput);
+  },[pinInput,locked]);
+
+  // PIN setup flow
+  useEffect(()=>{
+    if(pinSetup==="confirm"&&pinInput.length===4){
+      if(pinInput===pinNew){savePin(pinInput);setPinSetup(null);setPinInput("");setPinNew("");alert("PIN definido com sucesso!")}
+      else{setPinError(true);setPinInput("");setTimeout(()=>{setPinError(false)},1000)}
+    }
+    if(pinSetup==="new"&&pinInput.length===4){setPinNew(pinInput);setPinInput("");setPinSetup("confirm")}
+  },[pinInput,pinSetup]);
+
   const init=useRef(loadAll());
   const[profiles,setProfiles]=useState(init.current.profiles||[]);
   const[curProfileId,setCurProfileId]=useState(init.current.curProfileId||null);
@@ -276,6 +333,68 @@ function App(){
   /* Profile */
   const addProfile=d=>{const np={id:uid(),...d};setProfiles(p=>[...p,np]);setCurProfileId(np.id);setModal(null)};
   const deleteProfile=id=>{const aIds=accounts.filter(a=>a.profileId===id).map(a=>a.id);setAccounts(p=>p.filter(a=>a.profileId!==id));setTxs(p=>p.filter(t=>!aIds.includes(t.accountId)));setProfiles(p=>p.filter(x=>x.id!==id));if(curProfileId===id){const rem=profiles.filter(x=>x.id!==id);setCurProfileId(rem.length>0?rem[0].id:null)}setViewStack(["home"]);setProfMenuOpen(false)};
+
+  /* Crypto helpers */
+  const deriveKey=async(password,salt)=>{
+    const enc=new TextEncoder();
+    const keyMaterial=await crypto.subtle.importKey("raw",enc.encode(password),{name:"PBKDF2"},false,["deriveKey"]);
+    return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:100000,hash:"SHA-256"},keyMaterial,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+  };
+  const encryptData=async(data,password)=>{
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const key=await deriveKey(password,salt);
+    const enc=new TextEncoder();
+    const encrypted=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,enc.encode(data));
+    // Combine: salt(16) + iv(12) + encrypted
+    const buf=new Uint8Array(salt.length+iv.length+encrypted.byteLength);
+    buf.set(salt,0);buf.set(iv,16);buf.set(new Uint8Array(encrypted),28);
+    return buf;
+  };
+  const decryptData=async(buf,password)=>{
+    const salt=buf.slice(0,16);const iv=buf.slice(16,28);const data=buf.slice(28);
+    const key=await deriveKey(password,salt);
+    const dec=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,data);
+    return new TextDecoder().decode(dec);
+  };
+
+  /* Export / Import */
+  const exportData=async()=>{
+    const pwd=prompt("Crie uma senha para proteger o backup:");
+    if(!pwd)return;
+    const pwd2=prompt("Confirme a senha:");
+    if(pwd!==pwd2){alert("As senhas não coincidem.");return}
+    try{
+      const json=JSON.stringify({profiles,accounts,txs,curProfileId,_exportDate:new Date().toISOString(),_version:1});
+      const encrypted=await encryptData(json,pwd);
+      const blob=new Blob([encrypted],{type:"application/octet-stream"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download="financas-backup-"+td().replace(/-/g,"")+".bkp";
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert("Backup exportado com sucesso!\nGuarde a senha — sem ela não é possível restaurar.");
+    }catch{alert("Erro ao exportar.")}
+    setProfMenuOpen(false);
+  };
+  const importRef=useRef(null);
+  const importData=async e=>{
+    const file=e.target.files?.[0];if(!file)return;
+    const pwd=prompt("Digite a senha do backup:");
+    if(!pwd){e.target.value="";return}
+    try{
+      const buf=new Uint8Array(await file.arrayBuffer());
+      const json=await decryptData(buf,pwd);
+      const data=JSON.parse(json);
+      if(!data.profiles||!data.accounts||!data.txs){alert("Arquivo inválido.");e.target.value="";return}
+      if(!confirm("Isso vai SUBSTITUIR todos os seus dados atuais.\nContinuar?")){e.target.value="";return}
+      setProfiles(data.profiles);setAccounts(data.accounts);setTxs(data.txs);
+      setCurProfileId(data.curProfileId||data.profiles[0]?.id||null);
+      setViewStack(["home"]);setProfMenuOpen(false);
+      alert("Dados importados com sucesso!");
+    }catch{alert("Senha incorreta ou arquivo inválido.")}
+    e.target.value="";
+  };
 
   /* Account */
   const addAccount=d=>{setAccounts(p=>[...p,{id:uid(),profileId:curProfileId,...d}]);setModal(null)};
@@ -584,6 +703,33 @@ function App(){
     return(t.type==="income"||t.type==="transfer_in")?C.green:C.red;
   };
 
+  /* PIN Keypad component */
+  const PinPad=({title,subtitle,onPress,value,error})=>(
+    <div style={{...ST.app,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:24}}>
+      <div style={{fontSize:36,marginBottom:16}}>🔒</div>
+      <h2 style={{fontSize:20,fontWeight:700,color:C.text,marginBottom:6}}>{title}</h2>
+      {subtitle&&<p style={{fontSize:13,color:C.textSec,marginBottom:24}}>{subtitle}</p>}
+      <div style={{display:"flex",gap:12,marginBottom:32}}>
+        {[0,1,2,3].map(i=><div key={i} style={{width:18,height:18,borderRadius:"50%",border:"2px solid "+(error?C.red:C.blue),background:i<value.length?(error?C.red:C.blue):"transparent",transition:"all .2s"}}/>)}
+      </div>
+      {error&&<p style={{color:C.red,fontSize:13,marginBottom:12}}>PIN incorreto</p>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,width:240}}>
+        {["1","2","3","4","5","6","7","8","9","C","0","⌫"].map(k=>(
+          <button key={k} onClick={()=>onPress(k)} style={{height:56,borderRadius:14,border:"none",fontSize:22,fontWeight:600,cursor:"pointer",fontFamily:"'JetBrains Mono',monospace",
+            background:k==="C"?"#fef2f2":k==="⌫"?"#f1f5f9":C.inputBg,
+            color:k==="C"?C.red:k==="⌫"?C.textSec:C.text
+          }}>{k}</button>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* ═══ LOCK SCREEN ═══ */
+  if(locked)return <PinPad title="Digite o PIN" subtitle="4 dígitos" onPress={pinPress} value={pinInput} error={pinError}/>;
+
+  /* ═══ PIN SETUP ═══ */
+  if(pinSetup)return <PinPad title={pinSetup==="new"?"Crie um PIN":"Confirme o PIN"} subtitle={pinSetup==="new"?"Escolha 4 dígitos":"Digite novamente"} onPress={pinPress} value={pinInput} error={pinError}/>;
+
   /* ═══ NO PROFILE ═══ */
   if(!curProfileId||!activeProfile)return(
     <div style={ST.app}><div style={{padding:"48px 24px",textAlign:"center"}}><div style={{fontSize:48,marginBottom:16}}>👋</div><h1 style={{fontSize:24,fontWeight:700,marginBottom:8,color:C.text}}>Bem-vindo ao Finanças</h1><p style={{color:C.textSec,marginBottom:32,lineHeight:1.6}}>Crie um perfil para começar.</p>
@@ -625,7 +771,21 @@ function App(){
         {profiles.map(p=><button key={p.id} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,fontWeight:500,color:p.id===curProfileId?C.text:p.color}} onClick={()=>{setCurProfileId(p.id);setProfMenuOpen(false)}}><IcoUser/> {p.name}{p.id===curProfileId?" ✓":""}</button>)}
         <div style={{borderTop:"1px solid "+C.cardBorder,margin:"6px 0"}}/><button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.blue}} onClick={()=>{setModal("newProfile");setProfMenuOpen(false)}}><IcoPlus/> Novo Perfil</button>
         <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.red}} onClick={()=>deleteProfile(curProfileId)}><IcoTrash/> Excluir Perfil</button>
+        <div style={{borderTop:"1px solid "+C.cardBorder,margin:"6px 0"}}/>
+        <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.green}} onClick={exportData}>🔒 Exportar Backup</button>
+        <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.amber}} onClick={()=>{importRef.current?.click();setProfMenuOpen(false)}}>🔑 Importar Backup</button>
+        <div style={{borderTop:"1px solid "+C.cardBorder,margin:"6px 0"}}/>
+        {hasPin()?<>
+          <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.purple}} onClick={()=>{setPinInput("");setPinSetup("new");setProfMenuOpen(false)}}>🔄 Alterar PIN</button>
+          <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.red}} onClick={()=>{removePin();setProfMenuOpen(false)}}>🚫 Remover PIN</button>
+        </>:
+          <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.purple}} onClick={()=>{setPinInput("");setPinSetup("new");setProfMenuOpen(false)}}>🔐 Definir PIN</button>
+        }
+        <div style={{borderTop:"1px solid "+C.cardBorder,margin:"6px 0"}}/>
+        <a href="mailto:ramiro.gracekelly4@gmail.com?subject=Feedback%20App%20Finan%C3%A7as" style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.textSec,textDecoration:"none"}} onClick={()=>setProfMenuOpen(false)}>💬 Enviar Feedback</a>
+        <button style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",cursor:"pointer",borderRadius:8,fontSize:14,color:C.textSec}} onClick={()=>{toggleTheme();setProfMenuOpen(false)}}>{theme==="light"?"🌙 Modo Escuro":"☀️ Modo Claro"}</button>
       </div>}
+      <input ref={importRef} type="file" accept=".bkp,.json" style={{display:"none"}} onChange={importData}/>
 
       {(bankAccts.length>0||cardAccts.length>0)&&(()=>{const tB=bankAccts.reduce((s,a)=>s+getBankBal(a.id),0);const tC=cardAccts.reduce((s,a)=>{const m=getMonthTxs(a.id);const sp=m.filter(t=>t.type==="expense"||t.type==="transfer").reduce((ss,t)=>ss+t.amount,0);const est=m.filter(t=>t.type==="income").reduce((ss,t)=>ss+t.amount,0);const pd=m.filter(t=>t.type==="transfer_in").reduce((ss,t)=>ss+t.amount,0);return s+Math.max(0,sp-est-pd)},0);const net=tB-tC;
         return <div style={{margin:"0 16px 14px",padding:16,background:C.card,borderRadius:14,border:"1px solid "+C.cardBorder,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
@@ -715,14 +875,14 @@ function App(){
               const ei=isRecurVirtual?{...t,paid:t._recurPaid}:t;
               setEditItem(ei);setModal("txDetail");
             }}>
-            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();e.preventDefault();const scrollY=window.scrollY;if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id);requestAnimationFrame(()=>window.scrollTo(0,scrollY))}}>{isPaid&&<IcoCheck/>}</button>
+            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:C.checkBrd),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();e.preventDefault();const scrollY=window.scrollY;if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id);requestAnimationFrame(()=>window.scrollTo(0,scrollY))}}>{isPaid&&<IcoCheck/>}</button>
             <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontSize:13,fontWeight:500,color:C.text,display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
                   <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</span>
                   {t.instNum&&<span style={ST.badge}>{t.instNum}/{t.instTotal} <span style={{color:C.textTer,marginLeft:2}}>({fmt(t.instUnitAmount*t.instTotal)})</span></span>}
-                  {t.isRecurring&&<span style={{...ST.badge,background:"#ede9fe",color:C.purple}}>Rec</span>}
+                  {t.isRecurring&&<span style={{...ST.badge,background:C.purpleBg2,color:C.purple}}>Rec</span>}
                 </div>
                 <div style={{fontSize:10,color:C.textSec,marginTop:2}}>
                   {t.date.split("-").reverse().join("/")} · {t.category}
@@ -887,13 +1047,13 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,descCatMap,on
 
   return <div style={{display:"flex",flexDirection:"column",gap:12}}>
     {isBank&&<div style={{display:"flex",gap:6}}>
-      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:C.green,color:C.green,background:"#f0fdf4"}:{})}} onClick={()=>set("type","income")}><IcoUp/> Entrada</button>
-      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:"#fef2f2"}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Saída</button>
-      <button style={{...ST.typeBtn,...(form.type==="transfer"?{borderColor:C.purple,color:C.purple,background:"#f5f3ff"}:{})}} onClick={()=>set("type","transfer")}><IcoTransfer/> Transf.</button>
+      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:C.green,color:C.green,background:C.greenBg}:{})}} onClick={()=>set("type","income")}><IcoUp/> Entrada</button>
+      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:C.redBg}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Saída</button>
+      <button style={{...ST.typeBtn,...(form.type==="transfer"?{borderColor:C.purple,color:C.purple,background:C.purpleBg}:{})}} onClick={()=>set("type","transfer")}><IcoTransfer/> Transf.</button>
     </div>}
     {!isBank&&<div style={{display:"flex",gap:6,marginBottom:4}}>
-      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:"#fef2f2"}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Despesa</button>
-      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:C.green,color:C.green,background:"#f0fdf4"}:{})}} onClick={()=>set("type","income")}><IcoUp/> Estorno</button>
+      <button style={{...ST.typeBtn,...(form.type==="expense"?{borderColor:C.red,color:C.red,background:C.redBg}:{})}} onClick={()=>set("type","expense")}><IcoDown/> Despesa</button>
+      <button style={{...ST.typeBtn,...(form.type==="income"?{borderColor:C.green,color:C.green,background:C.greenBg}:{})}} onClick={()=>set("type","income")}><IcoUp/> Estorno</button>
     </div>}
     {form.type==="transfer"&&<>
       <Field label="Origem" error={errs.accountId}><select style={ST.input} className={errs.accountId?"field-error":""} value={form.accountId} onChange={e=>{set("accountId",e.target.value);if(form.toAccountId===e.target.value)set("toAccountId","")}}><option value="">Selecione...</option>{allAccounts.map(a=><option key={a.id} value={a.id}>{a.type==="card"?"💳":"🏦"} {a.name} ({gp(a)})</option>)}</select></Field>
@@ -918,7 +1078,7 @@ function TxForm({initial,account,allAccounts,profiles,descriptions,descCatMap,on
 }
 
 /* Styles - Light Theme */
-const ST={
+const getST=()=>({
   app:{fontFamily:"'DM Sans',sans-serif",background:C.bg,color:C.text,minHeight:"100vh",maxWidth:520,margin:"0 auto",paddingBottom:80},
   header:{padding:"16px 16px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"},
   navBtn:{background:"none",border:"none",color:C.textSec,cursor:"pointer",padding:4,display:"flex",borderRadius:6},
@@ -929,7 +1089,7 @@ const ST={
   aCard:{background:C.card,borderRadius:10,padding:"14px 16px",marginBottom:8,cursor:"pointer",borderLeft:"3px solid",boxShadow:"0 1px 3px rgba(0,0,0,0.06)"},
   aRow:{display:"flex",justifyContent:"space-between",alignItems:"center"},
   txItem:{display:"flex",alignItems:"center",padding:"10px 8px",borderRadius:8,background:C.card,marginBottom:3,gap:6,transition:"opacity .2s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)"},
-  badge:{fontSize:9,background:"#f1f5f9",color:C.textSec,padding:"2px 5px",borderRadius:4,fontWeight:600,display:"inline-flex",alignItems:"center",gap:2,whiteSpace:"nowrap",flexShrink:0},
+  badge:{fontSize:9,background:C.badgeBg,color:C.textSec,padding:"2px 5px",borderRadius:4,fontWeight:600,display:"inline-flex",alignItems:"center",gap:2,whiteSpace:"nowrap",flexShrink:0},
   sBtn:{background:"none",border:"none",color:C.textTer,cursor:"pointer",padding:3,borderRadius:4,display:"flex"},
   empty:{textAlign:"center",color:C.textTer,padding:28,fontSize:14},
   fab:{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",border:"none",borderRadius:28,padding:"14px 24px",fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(99,102,241,0.35)",zIndex:10},
@@ -945,7 +1105,7 @@ const ST={
   scopeBtn:{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"14px 16px",background:C.inputBg,border:"1.5px solid",borderRadius:10,color:C.text,fontSize:14,fontWeight:500,cursor:"pointer"},
   toggleBtn:{padding:"6px 14px",borderRadius:8,border:"1px solid "+C.cardBorder,background:C.card,color:C.textSec,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all .2s"},
   toggleActive:{background:C.blue,color:"#fff",borderColor:C.blue},
-};
+});
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
