@@ -86,96 +86,131 @@ function DescInput({value,onChange,onSelect,suggestions,style,className}){const[
 /* Money input: types digits, formats as currency with comma. Internal value is string number like "10.00" */
 function MoneyInput({value,onChange,style,className}){
   const[open,setOpen]=useState(false);
-  const[expr,setExpr]=useState("");
-  const[hasResult,setHasResult]=useState(false);
+  const[disp,setDisp]=useState("0");
+  const[prev,setPrev]=useState(null);
+  const[op,setOp]=useState(null);
+  const[waitSecond,setWaitSecond]=useState(false);
+  const[justCalc,setJustCalc]=useState(false);
+
   const cents=Math.round((parseFloat(value)||0)*100);
-  const display=cents===0?"0,00":(cents/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fieldDisplay=cents===0?"0,00":(cents/100).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
   const openCalc=()=>{
-    if(value&&parseFloat(value)>0){
-      setExpr(display.replace(/\./g,""));
-    } else {
-      setExpr("");
-    }
-    setHasResult(false);
+    const v=parseFloat(value)||0;
+    setDisp(v>0?v.toString().replace(".",","):"0");
+    setPrev(null);setOp(null);setWaitSecond(false);setJustCalc(false);
     setOpen(true);
   };
 
-  const calcResult=(e)=>{
-    try{
-      // Replace comma with dot, × with *, ÷ with /
-      const safe=e.replace(/,/g,".").replace(/×/g,"*").replace(/÷/g,"/");
-      const r=Function('"use strict";return('+safe+')')();
-      return Math.round(r*100)/100;
-    }catch{return null}
+  const parseDisp=(s)=>parseFloat(s.replace(/,/g,"."))||0;
+  const fmtDisp=(n)=>{
+    const r=Math.round(n*100)/100;
+    const s=r.toString().replace(".",",");
+    return s;
+  };
+
+  const compute=(a,b,o)=>{
+    switch(o){case"+":return a+b;case"-":return a-b;case"×":return a*b;case"÷":return b!==0?a/b:0;default:return b}
   };
 
   const press=(k)=>{
-    if(k==="C"){setExpr("");setHasResult(false);return}
-    if(k==="⌫"){setExpr(p=>p.slice(0,-1));setHasResult(false);return}
+    // Digits 0-9
+    if(k>="0"&&k<="9"){
+      if(justCalc){setDisp(k);setPrev(null);setOp(null);setJustCalc(false);setWaitSecond(false);return}
+      if(waitSecond){setDisp(k);setWaitSecond(false);return}
+      setDisp(d=>d==="0"?k:d+k);
+      return;
+    }
+    // Comma (decimal)
+    if(k===","){
+      if(justCalc){setDisp("0,");setPrev(null);setOp(null);setJustCalc(false);setWaitSecond(false);return}
+      if(waitSecond){setDisp("0,");setWaitSecond(false);return}
+      if(!disp.includes(","))setDisp(d=>d+",");
+      return;
+    }
+    // Operators
+    if("+-×÷".includes(k)){
+      const cur=parseDisp(disp);
+      if(prev!==null&&op&&!waitSecond){
+        const result=compute(prev,cur,op);
+        setDisp(fmtDisp(result));
+        setPrev(result);
+      } else {
+        setPrev(cur);
+      }
+      setOp(k);setWaitSecond(true);setJustCalc(false);
+      return;
+    }
+    // Equals
     if(k==="="){
-      const r=calcResult(expr);
-      if(r!==null&&r>=0){
-        onChange(r.toString());
-        setExpr(r.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}).replace(/\./g,""));
-        setHasResult(true);
+      if(prev!==null&&op){
+        const cur=parseDisp(disp);
+        const result=compute(prev,cur,op);
+        setDisp(fmtDisp(result));
+        setPrev(null);setOp(null);setJustCalc(true);setWaitSecond(false);
       }
       return;
     }
+    // Backspace
+    if(k==="⌫"){
+      if(justCalc)return;
+      setDisp(d=>{const n=d.slice(0,-1);return(!n||n==="-")?"0":n});
+      return;
+    }
+    // Clear
+    if(k==="C"){setDisp("0");setPrev(null);setOp(null);setWaitSecond(false);setJustCalc(false);return}
+    // Confirm
     if(k==="OK"){
-      const r=calcResult(expr);
-      if(r!==null&&r>=0){onChange(r.toString())}
+      let final=parseDisp(disp);
+      if(prev!==null&&op&&!waitSecond){final=compute(prev,final,op)}
+      final=Math.round(Math.abs(final)*100)/100;
+      onChange(final.toString());
       setOpen(false);return;
     }
-    // If just got result and pressing a digit, start fresh
-    if(hasResult&&!"+-×÷".includes(k)){setExpr(k);setHasResult(false);return}
-    setHasResult(false);
-    setExpr(p=>p+k);
   };
 
-  const previewResult=calcResult(expr);
-  const previewDisplay=previewResult!==null&&previewResult>=0?previewResult.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}):"";
-  const hasOp=expr.includes("+")||expr.includes("-")||expr.includes("×")||expr.includes("÷");
+  // Format display for screen
+  const screenNum=disp;
+  const screenOp=op?(prev!==null?fmtDisp(prev)+" "+op:""):"";
 
-  const btnS={display:"flex",alignItems:"center",justifyContent:"center",border:"none",borderRadius:10,fontSize:20,fontWeight:600,cursor:"pointer",height:48,fontFamily:"'JetBrains Mono',monospace"};
+  const btnS={display:"flex",alignItems:"center",justifyContent:"center",border:"none",borderRadius:12,fontSize:22,fontWeight:600,cursor:"pointer",height:52,fontFamily:"'JetBrains Mono',monospace"};
   const numS={...btnS,background:C.inputBg,color:C.text};
   const opS={...btnS,background:"#ede9fe",color:C.purple};
   const actS={...btnS,background:C.blue,color:"#fff"};
 
   return <>
     <div style={{...style,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}} className={className} onClick={openCalc}>
-      <span style={{color:cents===0?C.textTer:C.text}}>{display}</span>
+      <span style={{color:cents===0?C.textTer:C.text}}>{fieldDisplay}</span>
       <span style={{fontSize:11,color:C.textSec}}>🧮</span>
     </div>
     {open&&<div style={{position:"fixed",inset:0,background:C.overlayBg,display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200,backdropFilter:"blur(4px)"}} onClick={()=>setOpen(false)}>
       <div style={{background:C.card,borderRadius:"20px 20px 0 0",width:"100%",maxWidth:520,padding:"16px 16px 20px"}} onClick={e=>e.stopPropagation()}>
         {/* Display */}
-        <div style={{background:C.inputBg,borderRadius:12,padding:"12px 16px",marginBottom:12,minHeight:60}}>
-          <div style={{fontSize:14,color:C.textSec,fontFamily:"'JetBrains Mono',monospace",minHeight:20,wordBreak:"break-all"}}>{expr||"0"}</div>
-          {hasOp&&previewDisplay&&<div style={{fontSize:22,fontWeight:700,color:C.text,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",marginTop:4}}>= {previewDisplay}</div>}
-          {!hasOp&&<div style={{fontSize:22,fontWeight:700,color:C.text,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",marginTop:4}}>{previewDisplay||"0,00"}</div>}
+        <div style={{background:C.inputBg,borderRadius:12,padding:"14px 16px",marginBottom:14,minHeight:70}}>
+          {screenOp&&<div style={{fontSize:13,color:C.textSec,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",marginBottom:4}}>{screenOp}</div>}
+          <div style={{fontSize:28,fontWeight:700,color:C.text,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",wordBreak:"break-all"}}>{screenNum}</div>
         </div>
         {/* Keypad */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:15,fontWeight:700}} onClick={()=>press("C")}>C</button>
+          <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:18}} onClick={()=>press("⌫")}>⌫</button>
+          <button style={opS} onClick={()=>press("÷")}>÷</button>
+          <button style={opS} onClick={()=>press("×")}>×</button>
           <button style={numS} onClick={()=>press("7")}>7</button>
           <button style={numS} onClick={()=>press("8")}>8</button>
           <button style={numS} onClick={()=>press("9")}>9</button>
-          <button style={opS} onClick={()=>press("÷")}>÷</button>
+          <button style={opS} onClick={()=>press("-")}>−</button>
           <button style={numS} onClick={()=>press("4")}>4</button>
           <button style={numS} onClick={()=>press("5")}>5</button>
           <button style={numS} onClick={()=>press("6")}>6</button>
-          <button style={opS} onClick={()=>press("×")}>×</button>
+          <button style={opS} onClick={()=>press("+")}>+</button>
           <button style={numS} onClick={()=>press("1")}>1</button>
           <button style={numS} onClick={()=>press("2")}>2</button>
           <button style={numS} onClick={()=>press("3")}>3</button>
-          <button style={opS} onClick={()=>press("-")}>−</button>
-          <button style={numS} onClick={()=>press(",")}>&#44;</button>
+          <button style={{...btnS,background:"#ede9fe",color:C.purple,fontSize:18,fontWeight:700,gridRow:"span 2"}} onClick={()=>press("=")}>=</button>
           <button style={numS} onClick={()=>press("0")}>0</button>
-          <button style={{...btnS,background:"#fef2f2",color:C.red,fontSize:16}} onClick={()=>press("⌫")}>⌫</button>
-          <button style={opS} onClick={()=>press("+")}>+</button>
-          <button style={{...btnS,background:"#f1f5f9",color:C.textSec,fontSize:14,fontWeight:700}} onClick={()=>press("C")}>C</button>
-          <button style={{...btnS,background:"#ede9fe",color:C.purple,fontSize:14,fontWeight:700}} onClick={()=>press("=")}>=</button>
-          <button style={{...actS,gridColumn:"span 2",fontSize:16,fontWeight:700}} onClick={()=>press("OK")}>Confirmar</button>
+          <button style={numS} onClick={()=>press(",")}>&#44;</button>
+          <button style={{...actS,fontSize:14,fontWeight:700}} onClick={()=>press("OK")}>OK</button>
         </div>
       </div>
     </div>}
@@ -317,23 +352,23 @@ function App(){
         if(recurScope==="instThis"){
           // Edit only this installment - all fields allowed
           const editFields={};
-          ["description","amount","category","dueDate","date"].forEach(k=>{if(clean[k]!==undefined)editFields[k]=clean[k]});
+          ["description","amount","category","dueDate","date","accountId"].forEach(k=>{if(clean[k]!==undefined)editFields[k]=clean[k]});
           if(clean.amount!==undefined)editFields.instUnitAmount=clean.amount;
           let updated=p.map(t=>t.id===id?{...t,...editFields}:t);
           // Also update mirror of this specific installment
           const mirror=p.find(t=>t._mirrorOf===id)||(orig._mirrorOf?p.find(t=>t.id===orig._mirrorOf):null);
-          if(mirror){const mf={};["description","amount","category","dueDate","date"].forEach(k=>{if(editFields[k]!==undefined)mf[k]=editFields[k]});if(editFields.instUnitAmount!==undefined)mf.instUnitAmount=editFields.instUnitAmount;updated=updated.map(t=>t.id===mirror.id?{...t,...mf}:t)}
+          if(mirror){const mf={};["description","amount","category","dueDate","date"].forEach(k=>{if(editFields[k]!==undefined)mf[k]=editFields[k]});if(editFields.instUnitAmount!==undefined)mf.instUnitAmount=editFields.instUnitAmount;if(editFields.accountId)mf.fromAccountId=editFields.accountId;updated=updated.map(t=>t.id===mirror.id?{...t,...mf}:t)}
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
         }
         // For forward/all: do NOT propagate date/dueDate (each installment has its own)
         const groupFields={};
-        ["description","amount","category"].forEach(k=>{if(clean[k]!==undefined)groupFields[k]=clean[k]});
+        ["description","amount","category","accountId"].forEach(k=>{if(clean[k]!==undefined)groupFields[k]=clean[k]});
         if(clean.amount!==undefined)groupFields.instUnitAmount=clean.amount;
         if(recurScope==="instForward"){
           let updated=p.map(t=>{
             if(t.groupId===orig.groupId&&t.instNum>=orig.instNum)return{...t,...groupFields};
             // Also update mirrors of this group
-            if(t._mirrorOf){const parent=p.find(x=>x.id===t._mirrorOf);if(parent&&parent.groupId===orig.groupId&&parent.instNum>=orig.instNum){const mf={};if(groupFields.description)mf.description=groupFields.description;if(groupFields.amount!==undefined)mf.amount=groupFields.amount;if(groupFields.instUnitAmount!==undefined)mf.instUnitAmount=groupFields.instUnitAmount;return{...t,...mf}}}
+            if(t._mirrorOf){const parent=p.find(x=>x.id===t._mirrorOf);if(parent&&parent.groupId===orig.groupId&&parent.instNum>=orig.instNum){const mf={};if(groupFields.description)mf.description=groupFields.description;if(groupFields.amount!==undefined)mf.amount=groupFields.amount;if(groupFields.instUnitAmount!==undefined)mf.instUnitAmount=groupFields.instUnitAmount;if(groupFields.accountId)mf.fromAccountId=groupFields.accountId;return{...t,...mf}}}
             return t;
           });
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
@@ -342,7 +377,7 @@ function App(){
           let updated=p.map(t=>{
             if(t.groupId===orig.groupId)return{...t,...groupFields};
             // Also update mirrors of this group
-            if(t._mirrorOf){const parent=p.find(x=>x.id===t._mirrorOf);if(parent&&parent.groupId===orig.groupId){const mf={};if(groupFields.description)mf.description=groupFields.description;if(groupFields.amount!==undefined)mf.amount=groupFields.amount;if(groupFields.instUnitAmount!==undefined)mf.instUnitAmount=groupFields.instUnitAmount;return{...t,...mf}}}
+            if(t._mirrorOf){const parent=p.find(x=>x.id===t._mirrorOf);if(parent&&parent.groupId===orig.groupId){const mf={};if(groupFields.description)mf.description=groupFields.description;if(groupFields.amount!==undefined)mf.amount=groupFields.amount;if(groupFields.instUnitAmount!==undefined)mf.instUnitAmount=groupFields.instUnitAmount;if(groupFields.accountId)mf.fromAccountId=groupFields.accountId;return{...t,...mf}}}
             return t;
           });
           return updated.sort((a,b)=>a.date.localeCompare(b.date));
@@ -622,8 +657,10 @@ function App(){
 
   /* ═══ DETAIL ═══ */
   const isBank=curAcct?curAcct.type==="bank":true;const monthTxs=curAcct?getMonthTxs(selAcctId):[];const prevBal=isBank?getBankPrev(selAcctId):0;
-  const mInc=monthTxs.filter(t=>t.type==="income"||t.type==="transfer_in").reduce((s,t)=>s+t.amount,0);
-  const mExp=monthTxs.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0);
+  const useToday=balMode==="today"&&isCurrentMonth;
+  const todayFilter=t=>!useToday||t.date<=todayKey;
+  const mInc=monthTxs.filter(t=>(t.type==="income"||t.type==="transfer_in")&&todayFilter(t)).reduce((s,t)=>s+t.amount,0);
+  const mExp=monthTxs.filter(t=>(t.type==="expense"||t.type==="transfer")&&todayFilter(t)).reduce((s,t)=>s+t.amount,0);
   const cSp=!isBank?monthTxs.filter(t=>t.type==="expense"||t.type==="transfer").reduce((s,t)=>s+t.amount,0):0;
   const cEstorno=!isBank?monthTxs.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0):0;
   const cPd=!isBank?monthTxs.filter(t=>t.type==="transfer_in").reduce((s,t)=>s+t.amount,0):0;
@@ -650,7 +687,7 @@ function App(){
       </div>}
 
       <div style={{display:"flex",gap:6,padding:"0 16px 10px",flexWrap:"wrap"}}>
-        {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label={balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Final"} value={fmt(getBankBal(selAcctId))} color={curAcct?.color||C.blue}/></>
+        {isBank?<><SumCard label="Entradas" value={fmt(mInc)} color={C.green}/><SumCard label="Saídas" value={fmt(mExp)} color={C.red}/><SumCard label={balMode==="today"&&isCurrentMonth?"Saldo Hoje":"Saldo Final"} value={fmt(prevBal+mInc-mExp)} color={curAcct?.color||C.blue}/></>
         :<><SumCard label="Fatura" value={fmt(cFatura)} color={cFatura>0?C.amber:C.green}/><SumCard label="Pago" value={fmt(cPd)} color={C.green}/><SumCard label="Restante" value={fmt(Math.max(0,cFatura-cPd))} color={Math.round((cFatura-cPd)*100)>0?C.red:C.green}/></>}
       </div>
 
@@ -678,7 +715,7 @@ function App(){
               const ei=isRecurVirtual?{...t,paid:t._recurPaid}:t;
               setEditItem(ei);setModal("txDetail");
             }}>
-            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();e.preventDefault();if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id)}}>{isPaid&&<IcoCheck/>}</button>
+            <button style={{width:22,height:22,borderRadius:6,border:"2px solid "+(isPaid?C.green:"#cbd5e1"),background:isPaid?"#dcfce7":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,color:C.green,padding:0}} onClick={e=>{e.stopPropagation();e.preventDefault();const scrollY=window.scrollY;if(isRecurVirtual)toggleRecurPaid(t.id,mKey);else togglePaid(t.id);requestAnimationFrame(()=>window.scrollTo(0,scrollY))}}>{isPaid&&<IcoCheck/>}</button>
             <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:col,flexShrink:0}}/>
               <div style={{minWidth:0,flex:1}}>
@@ -815,11 +852,30 @@ function App(){
 /* Forms */
 function ProfileForm({onSubmit}){const[name,setName]=useState("");const[color,setColor]=useState(PROF_COLORS[0]);return <div style={{display:"flex",flexDirection:"column",gap:14}}><Field label="Nome"><input style={ST.input} placeholder="Ex: Pessoal" value={name} onChange={e=>setName(e.target.value)}/></Field><Field label="Cor"><div style={{display:"flex",gap:8}}>{PROF_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:36,height:36,borderRadius:"50%",background:c,border:color===c?"3px solid "+C.text:"3px solid transparent",cursor:"pointer"}}/>)}</div></Field><button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color})}>Criar Perfil</button></div>}
 
-function AcctForm({type,usedColors,onSubmit,initial}){const[name,setName]=useState(initial?.name||"");const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));const[color,setColor]=useState(initial?.color||avail[0]||ACCT_COLORS[0]);return <div style={{display:"flex",flexDirection:"column",gap:14}}><Field label="Nome"><input style={ST.input} placeholder={type==="bank"?"Ex: Nubank":"Ex: Visa Platinum"} value={name} onChange={e=>setName(e.target.value)}/></Field><Field label="Cor"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{ACCT_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid "+C.text:"3px solid transparent",cursor:"pointer"}}/>)}</div></Field><button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type})}>{initial?"Salvar":"Criar"} {type==="bank"?"Conta":"Cartão"}</button></div>}
+function AcctForm({type,usedColors,onSubmit,initial}){
+  const[name,setName]=useState(initial?.name||"");
+  const avail=ACCT_COLORS.filter(c=>!usedColors.includes(c));
+  const[color,setColor]=useState(initial?.color||avail[0]||ACCT_COLORS[0]);
+  const[dueDay,setDueDay]=useState(initial?.dueDay||"");
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <Field label="Nome"><input style={ST.input} placeholder={type==="bank"?"Ex: Nubank":"Ex: Visa Platinum"} value={name} onChange={e=>setName(e.target.value)}/></Field>
+    {type==="card"&&<Field label="Dia de vencimento da fatura"><input type="number" min="1" max="31" style={ST.input} placeholder="Ex: 15" value={dueDay} onChange={e=>setDueDay(e.target.value)}/></Field>}
+    <Field label="Cor"><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{ACCT_COLORS.map(c=><button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid "+C.text:"3px solid transparent",cursor:"pointer"}}/>)}</div></Field>
+    <button style={ST.submitBtn} disabled={!name.trim()} onClick={()=>onSubmit({name:name.trim(),color,type,...(type==="card"?{dueDay:parseInt(dueDay)||0}:{})})}>{initial?"Salvar":"Criar"} {type==="bank"?"Conta":"Cartão"}</button>
+  </div>
+}
 
 function TxForm({initial,account,allAccounts,profiles,descriptions,descCatMap,onSubmit}){
   const isBank=account?.type==="bank";
-  const[form,setForm]=useState(()=>{if(initial)return{...initial,amount:String(initial.amount)};return{accountId:account?.id||"",date:td(),description:"",category:"Outros > Outros",amount:"",type:isBank?"expense":"expense",toAccountId:"",dueDate:"",installments:1,isRecurring:false,paid:false}});
+  const getNextDueDate=()=>{
+    if(!account||account.type!=="card"||!account.dueDay)return"";
+    const today=new Date();const day=account.dueDay;
+    let m=today.getMonth(),y=today.getFullYear();
+    // Next due date: if today's day is past the due day, use next month
+    if(today.getDate()>day){m++;if(m>11){m=0;y++}}
+    return y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+  };
+  const[form,setForm]=useState(()=>{if(initial)return{...initial,amount:String(initial.amount)};return{accountId:account?.id||"",date:td(),description:"",category:"Outros > Outros",amount:"",type:isBank?"expense":"expense",toAccountId:"",dueDate:getNextDueDate(),installments:1,isRecurring:false,paid:false}});
   const[tried,setTried]=useState(false);
   const set=(k,v)=>setForm(p=>({...p,[k]:v}));
   const gp=acct=>{const pr=(profiles||[]).find(p=>p.id===acct.profileId);return pr?pr.name:""};
