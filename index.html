@@ -17,6 +17,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body,#root{height:100%;width:100%;overflow-x:hidden}
 body{font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;background:#f8fafc}
+*{overflow-anchor:none}
 input,select,button{font-family:'DM Sans',sans-serif}
 input:focus,select:focus{outline:none;border-color:#6366f1 !important}
 ::-webkit-scrollbar{width:6px}
@@ -2355,12 +2356,29 @@ function App() {
       return s;
     }, 0);
   }, [txs, mKey, month]);
+  const [searchFuture, setSearchFuture] = useState(false);
   const searchResults = useMemo(() => {
     if (!searchQ || searchQ.length < 2) return [];
     const q = searchQ.toLowerCase();
     const qNum = parseFloat(searchQ.replace(",", "."));
-    return txs.filter(t => t.description?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q) || !isNaN(qNum) && t.amount === qNum || String(t.amount).replace(".", ",").includes(searchQ)).slice(0, 30);
-  }, [txs, searchQ]);
+    const now = new Date();
+    const endOfMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-31";
+    let results = txs.filter(t => {
+      const match = t.description?.toLowerCase().includes(q) || t.category?.toLowerCase().includes(q) || !isNaN(qNum) && t.amount === qNum || String(t.amount).replace(".", ",").includes(searchQ);
+      if (!match) return false;
+      if (!searchFuture && !t.isRecurring) {
+        const refDate = t.dueDate || t.date;
+        if (refDate > endOfMonth) return false;
+      }
+      return true;
+    });
+    results.sort((a, b) => {
+      const dA = a.dueDate || a.date;
+      const dB = b.dueDate || b.date;
+      return dB.localeCompare(dA);
+    });
+    return results.slice(0, 50);
+  }, [txs, searchQ, searchFuture]);
 
   /* Helper: get tx display color */
   const txColor = t => {
@@ -2710,6 +2728,13 @@ function App() {
     onChange: e => setSearchQ(e.target.value),
     autoFocus: true
   })), /*#__PURE__*/h("div", {
+    style: { padding: "0 16px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }
+  }, /*#__PURE__*/h("span", {
+    style: { fontSize: 12, color: C.textSec }
+  }, searchQ.length >= 2 ? searchResults.length + " resultado" + (searchResults.length !== 1 ? "s" : "") : ""), /*#__PURE__*/h("button", {
+    style: { background: searchFuture ? C.blue : "none", border: "1px solid " + (searchFuture ? C.blue : C.cardBorder), borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, color: searchFuture ? "#fff" : C.textSec, cursor: "pointer" },
+    onClick: () => setSearchFuture(p => !p)
+  }, "Incluir futuros")), /*#__PURE__*/h("div", {
     style: {
       padding: "0 16px"
     }
@@ -3498,6 +3523,9 @@ function App() {
           return updated;
         });
         requestAnimationFrame(() => window.scrollTo(0, scrollY));
+        setTimeout(() => window.scrollTo(0, scrollY), 50);
+        setTimeout(() => window.scrollTo(0, scrollY), 150);
+        setTimeout(() => window.scrollTo(0, scrollY), 300);
       }
     }, allPaid ? "☐ Desmarcar todas" : "☑ Marcar todas como pagas"));
   })(), /*#__PURE__*/h("div", {
@@ -3579,7 +3607,11 @@ function App() {
           e.preventDefault();
           const scrollY = window.scrollY;
           if (isRecurVirtual) toggleRecurPaid(t.id, mKey);else togglePaid(t.id);
-          requestAnimationFrame(() => window.scrollTo(0, scrollY));
+          const r = () => window.scrollTo(0, scrollY);
+          requestAnimationFrame(r);
+          setTimeout(r, 50);
+          setTimeout(r, 150);
+          setTimeout(r, 300);
         }
       }, isPaid && /*#__PURE__*/h(IcoCheck, null)), /*#__PURE__*/h("div", {
         style: {
