@@ -1873,11 +1873,12 @@ function App() {
         if (clean.amount !== undefined) groupFields.instUnitAmount = clean.amount;
         if (recurScope === "instForward") {
           let updated = p.map(t => {
-            if (t.groupId === orig.groupId && t.instNum >= orig.instNum) return {
+            // Main transactions (not mirrors)
+            if (t.groupId === orig.groupId && t.instNum >= orig.instNum && !t._mirrorOf && t.type !== "transfer_in") return {
               ...t,
               ...groupFields
             };
-            // Also update mirrors of this group
+            // Mirrors via _mirrorOf
             if (t._mirrorOf) {
               const parent = p.find(x => x.id === t._mirrorOf);
               if (parent && parent.groupId === orig.groupId && parent.instNum >= orig.instNum) {
@@ -1892,17 +1893,27 @@ function App() {
                 };
               }
             }
+            // Mirrors via groupId + transfer_in (in case _mirrorOf is missing)
+            if (t.groupId === orig.groupId && t.instNum >= orig.instNum && t.type === "transfer_in") {
+              const mf = {};
+              if (groupFields.description) mf.description = groupFields.description;
+              if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
+              if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
+              if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
+              return { ...t, ...mf };
+            }
             return t;
           });
           return updated.sort((a, b) => a.date.localeCompare(b.date));
         }
         if (recurScope === "instAll") {
           let updated = p.map(t => {
-            if (t.groupId === orig.groupId) return {
+            // Main transactions (not mirrors)
+            if (t.groupId === orig.groupId && !t._mirrorOf && t.type !== "transfer_in") return {
               ...t,
               ...groupFields
             };
-            // Also update mirrors of this group
+            // Mirrors via _mirrorOf
             if (t._mirrorOf) {
               const parent = p.find(x => x.id === t._mirrorOf);
               if (parent && parent.groupId === orig.groupId) {
@@ -1916,6 +1927,15 @@ function App() {
                   ...mf
                 };
               }
+            }
+            // Mirrors via groupId + transfer_in
+            if (t.groupId === orig.groupId && t.type === "transfer_in") {
+              const mf = {};
+              if (groupFields.description) mf.description = groupFields.description;
+              if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
+              if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
+              if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
+              return { ...t, ...mf };
             }
             return t;
           });
