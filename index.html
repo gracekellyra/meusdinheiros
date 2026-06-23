@@ -1805,20 +1805,33 @@ function App() {
         if (recurScope === "forward") {
           const prevM = new Date(month.y, month.m, 0);
           const endStr = prevM.getFullYear() + "-" + String(prevM.getMonth() + 1).padStart(2, "0") + "-" + String(prevM.getDate()).padStart(2, "0");
+          const dayPart = orig.date.split("-")[2];
+          const dueDayPart = orig.dueDate ? orig.dueDate.split("-")[2] : dayPart;
           const newTx = {
             ...orig,
             ...clean,
             id: uid(),
-            date: mKey + "-" + orig.date.split("-")[2],
+            date: mKey + "-" + dayPart,
+            dueDate: orig.dueDate ? mKey + "-" + dueDayPart : undefined,
             endDate: undefined,
             excludedMonths: undefined,
             paidMonths: undefined,
             monthOverrides: undefined
           };
-          return [...p.map(t => t.id === id ? {
+          let updated = p.map(t => t.id === id ? {
             ...t,
             endDate: endStr
-          } : t), newTx].sort((a, b) => a.date.localeCompare(b.date));
+          } : t);
+          // Also set endDate on the mirror
+          const mirror = p.find(t => t._mirrorOf === id);
+          if (mirror) updated = updated.map(t => t.id === mirror.id ? {...t, endDate: endStr} : t);
+          if (orig._mirrorOf) updated = updated.map(t => t.id === orig._mirrorOf ? {...t, endDate: endStr} : t);
+          // Create mirror for new tx if it's a transfer
+          if (newTx.type === "transfer" && newTx.toAccountId) {
+            const mirrorTx = {...newTx, id: uid(), type: "transfer_in", accountId: newTx.toAccountId, fromAccountId: newTx.accountId, toAccountId: undefined, _mirrorOf: newTx.id};
+            return [...updated, newTx, mirrorTx].sort((a, b) => a.date.localeCompare(b.date));
+          }
+          return [...updated, newTx].sort((a, b) => a.date.localeCompare(b.date));
         }
         // "all" falls through to normal edit
       }
@@ -3269,7 +3282,11 @@ function App() {
       style: {
         color: C.green
       }
-    }, /*#__PURE__*/h("strong", null, "Pago:"), " ", fmt(pd))));
+    }, /*#__PURE__*/h("strong", null, "Pago:"), " ", fmt(pd)), /*#__PURE__*/h("span", {
+      style: {
+        color: C.textSec
+      }
+    }, mT.length, " transa\xE7", mT.length === 1 ? "\xE3o" : "\xF5es")));
   })), /*#__PURE__*/h(Modal, {
     open: modal === "newProfile",
     onClose: () => setModal(null),
