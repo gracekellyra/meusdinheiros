@@ -352,19 +352,19 @@ const getST = () => ({
 let ST = getST();
 const CAT_TREE = {
   "Alimentação": ["Supermercado", "Restaurante", "Delivery", "Padaria", "Feira", "Lanches", "Guloseimas", "Outros"],
-  "Moradia": ["Aluguel", "Condomínio", "Energia", "Água", "Gás", "Internet", "IPTU", "Manutenção", "Outros"],
+  "Moradia": ["Aluguel", "Condomínio", "Energia", "Água", "Gás", "Internet", "IPTU", "Manutenção", "Decoração", "Utensílios", "Limpeza", "Outros"],
   "Transporte": ["Combustível", "Estacionamento", "Transporte público", "Uber/99", "Manutenção veículo", "Seguro veículo", "IPVA", "Pedágio", "Outros"],
   "Saúde": ["Plano de saúde", "Consulta médica", "Farmácia", "Dentista", "Exames", "Academia", "Outros"],
-  "Educação": ["Escola/Faculdade", "Curso online", "Livros", "Material escolar", "Outros"],
-  "Lazer": ["Cinema/Teatro", "Viagem", "Streaming", "Jogos", "Hobby", "Bares", "Outros"],
+  "Educação": ["Escola/Faculdade", "Curso online", "Livros", "Material escolar", "Papelaria", "Outros"],
+  "Lazer": ["Cinema", "Teatro", "Viagem", "Streaming", "Jogos", "Hobby", "Eventos", "Outros"],
   "Vestuário": ["Roupas", "Calçados", "Acessórios", "Outros"],
-  "Renda": ["Salário", "Comissão", "Freelance", "Investimentos", "Aluguel recebido", "Vendas", "Bônus", "Estorno", "Reembolso", "13º Salário", "Férias", "Dividendos", "Publi/Parceria", "Plataformas digitais", "Outros"],
+  "Renda": ["Salário", "Comissão", "Freelance", "Investimentos", "Aluguel recebido", "Vendas", "Bônus", "Estorno", "Reembolso", "13º Salário", "Férias", "Dividendos", "Outros"],
   "Finanças": ["Transferência", "Empréstimo", "Juros", "Tarifas bancárias", "Outros"],
-  "Compras": ["Eletrônicos", "Móveis", "Eletrodomésticos", "Presentes", "Outros"],
+  "Compras": ["Eletrônicos", "Móveis", "Eletrodomésticos", "Presentes", "Acessórios", "Outros"],
   "Serviços": ["Assinaturas", "Celular", "Seguros", "Contabilidade", "Outros"],
   "Pets": ["Ração", "Veterinário", "Acessórios", "Outros"],
   "Pessoal": ["Beleza", "Cuidados pessoais", "Outros"],
-  "Marketing Digital": ["Tráfego pago", "Ferramentas", "Plataformas", "Produção de conteúdo", "Equipamentos", "Assessoria", "Cursos", "Comissão plataforma", "Outros"],
+  "Marketing Digital": ["Tráfego pago", "Ferramentas", "Plataformas", "Produção de conteúdo", "Equipamentos", "Assessoria", "Cursos", "Comissão plataforma", "Publi/Parceria", "Plataformas digitais", "Outros"],
   "Outros": ["Outros"]
 };
 const CAT_KEYS = Object.keys(CAT_TREE);
@@ -1157,15 +1157,31 @@ function MoneyInput({
       fontWeight: 700
     },
     onClick: () => press("C")
-  }, "C"), /*#__PURE__*/h("button", {
-    style: {
-      ...btnS,
-      background: C.redBg,
-      color: C.red,
-      fontSize: 18
-    },
-    onClick: () => press("⌫")
-  }, "\u232B"), /*#__PURE__*/h("button", {
+  }, "C"), (() => {
+    let holdTimer = null;
+    let repeatTimer = null;
+    const startHold = () => {
+      holdTimer = setTimeout(() => {
+        press("C");
+        clearInterval(repeatTimer);
+      }, 1500);
+      repeatTimer = setInterval(() => press("⌫"), 120);
+    };
+    const endHold = () => {
+      clearTimeout(holdTimer);
+      clearInterval(repeatTimer);
+    };
+    return h("button", {
+      style: { ...btnS, background: C.redBg, color: C.red, fontSize: 18 },
+      onClick: () => press("⌫"),
+      onTouchStart: startHold,
+      onTouchEnd: endHold,
+      onTouchCancel: endHold,
+      onMouseDown: startHold,
+      onMouseUp: endHold,
+      onMouseLeave: endHold
+    }, "\u232B");
+  })(), /*#__PURE__*/h("button", {
     style: opS,
     onClick: () => press("÷")
   }, "\xF7"), /*#__PURE__*/h("button", {
@@ -1414,15 +1430,18 @@ function App() {
   // Swipe to change month
   const touchStart = useRef(null);
   const handleTouchStart = e => {
-    touchStart.current = e.touches[0].clientX;
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
   const handleTouchEnd = e => {
-    if (touchStart.current === null) return;
-    const diff = touchStart.current - e.changedTouches[0].clientX;
+    if (!touchStart.current) return;
+    const dx = touchStart.current.x - e.changedTouches[0].clientX;
+    const dy = Math.abs(touchStart.current.y - e.changedTouches[0].clientY);
     touchStart.current = null;
-    if (diff > 80) {
+    // Only trigger if horizontal movement is at least 2x the vertical (not diagonal/scroll)
+    if (dy > Math.abs(dx) * 0.7) return;
+    if (dx > 80) {
       navMonth(1);
-    } else if (diff < -140) {
+    } else if (dx < -140) {
       navMonth(-1);
     }
   };
@@ -3379,6 +3398,8 @@ function App() {
     style: ST.app,
     onTouchStart: handleTouchStart,
     onTouchEnd: handleTouchEnd
+  }, /*#__PURE__*/h("div", {
+    style: { position: "sticky", top: 0, zIndex: 10, background: C.bg, paddingBottom: 4 }
   }, /*#__PURE__*/h("header", {
     style: {
       ...ST.header,
@@ -3477,7 +3498,7 @@ function App() {
       ...(balMode === "full" ? ST.toggleActive : {})
     },
     onClick: () => setBalMode("full")
-  }, "M\xEAs inteiro")), /*#__PURE__*/h("div", {
+  }, "M\xEAs inteiro"))), /*#__PURE__*/h("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -3546,10 +3567,10 @@ function App() {
           });
           return updated;
         });
-        requestAnimationFrame(() => window.scrollTo(0, scrollY));
-        setTimeout(() => window.scrollTo(0, scrollY), 50);
-        setTimeout(() => window.scrollTo(0, scrollY), 150);
-        setTimeout(() => window.scrollTo(0, scrollY), 300);
+        const r = () => window.scrollTo(0, scrollY);
+        let count = 0;
+        const lock = () => { r(); count++; if (count < 30) requestAnimationFrame(lock); };
+        requestAnimationFrame(lock);
       }
     }, allPaid ? "☐ Desmarcar todas" : "☑ Marcar todas como pagas"));
   })(), /*#__PURE__*/h("div", {
@@ -3632,10 +3653,9 @@ function App() {
           const scrollY = window.scrollY;
           if (isRecurVirtual) toggleRecurPaid(t.id, mKey);else togglePaid(t.id);
           const r = () => window.scrollTo(0, scrollY);
-          requestAnimationFrame(r);
-          setTimeout(r, 50);
-          setTimeout(r, 150);
-          setTimeout(r, 300);
+          let count = 0;
+          const lock = () => { r(); count++; if (count < 30) requestAnimationFrame(lock); };
+          requestAnimationFrame(lock);
         }
       }, isPaid && /*#__PURE__*/h(IcoCheck, null)), /*#__PURE__*/h("div", {
         style: {
