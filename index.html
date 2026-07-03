@@ -1414,14 +1414,14 @@ function App() {
   const pushView = v => setViewStack(p => [...p, v]);
   const popView = () => setViewStack(p => p.length > 1 ? p.slice(0, -1) : p);
   useEffect(() => {
-    const h = e => {
+    const handlePop = e => {
       if (viewStack.length > 1) {
         e.preventDefault();
         popView();
       }
     };
-    window.addEventListener('popstate', h);
-    return () => window.removeEventListener('popstate', h);
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
   }, [viewStack]);
   useEffect(() => {
     if (viewStack.length > 1) window.history.pushState(null, "");
@@ -2839,6 +2839,256 @@ function App() {
     }, isIn ? "+" : "−", fmt(t.amount)));
   })));
 
+  /* ═══ DASHBOARD ═══ */
+  const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
+  if (view === "dashboard") {
+    const toggleDashProfile = (id) => {
+      setDashProfiles(prev => {
+        if (prev.includes(id)) {
+          const next = prev.filter(x => x !== id);
+          return next.length === 0 ? [id] : next; // prevent empty selection
+        }
+        return [...prev, id];
+      });
+    };
+    const selectAll = () => setDashProfiles(profiles.map(p => p.id));
+    const allSelected = dashProfiles.length === profiles.length;
+    const dAccts = accounts.filter(a => dashProfiles.includes(a.profileId));
+    const dAcctIds = dAccts.map(a => a.id);
+    const dTxs = txs.filter(t => dAcctIds.includes(t.accountId));
+    const mk = month.y + "-" + String(month.m + 1).padStart(2, "0");
+
+    // Get all transactions for a specific month (expand recurring)
+    const getMonthAll = (src, m) => {
+      const r = [];
+      const eom = new Date(m.y, m.m + 1, 0);
+      src.forEach(t => {
+        if (t.type === "transfer_in") return;
+        if (t.isRecurring) {
+          const txD = new Date(t.date + "T12:00:00");
+          if (txD > eom) return;
+          if (t.endDate) { const ed = new Date(t.endDate + "T12:00:00"); if (eom > ed) return; }
+          const mmk = m.y + "-" + String(m.m + 1).padStart(2, "0");
+          if (t.excludedMonths && t.excludedMonths.includes(mmk)) return;
+          if (t.monthOverrides && t.monthOverrides[mmk] && t.monthOverrides[mmk]._movedTo) return;
+          const ov = t.monthOverrides && t.monthOverrides[mmk] ? t.monthOverrides[mmk] : null;
+          const amt = ov && ov.amount !== undefined ? ov.amount : t.amount;
+          r.push({...t, amount: amt, _month: mmk});
+        } else {
+          const td = t.dueDate || t.date;
+          const tm = td.substring(0, 7);
+          const mmk = m.y + "-" + String(m.m + 1).padStart(2, "0");
+          if (tm === mmk) r.push({...t, _month: mmk});
+        }
+      });
+      return r;
+    };
+
+    const mTxs = getMonthAll(dTxs, month);
+    const mIncome = mTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const mExpense = mTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+    const mSaved = mIncome - mExpense;
+    const mPct = mIncome > 0 ? Math.round((mSaved / mIncome) * 100) : 0;
+
+    // Previous month comparison
+    const prevM = { y: month.m === 0 ? month.y - 1 : month.y, m: month.m === 0 ? 11 : month.m - 1 };
+    const pTxs = getMonthAll(dTxs, prevM);
+    const pExpense = pTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+    const expDiff = mExpense - pExpense;
+
+    // Category breakdown
+    const catMap = {};
+    mTxs.filter(t => t.type === "expense" || t.type === "transfer").forEach(t => {
+      const cat = (t.category || "Outros > Outros").split(" > ")[0];
+      catMap[cat] = (catMap[cat] || 0) + t.amount;
+    });
+    const catList = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+    const catMax = catList.length > 0 ? catList[0][1] : 1;
+
+    // Top 5
+    const top5 = [...mTxs].filter(t => t.type === "expense" || t.type === "transfer").sort((a, b) => b.amount - a.amount).slice(0, 5);
+
+    // Recurring debts (active)
+    const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate);
+    const recurTotal = recur.reduce((s, t) => s + t.amount, 0);
+
+    // Installments (active)
+    const now = new Date();
+    const installs = dTxs.filter(t => t.groupId && t.instNum && t.instTotal && (t.type === "expense" || t.type === "transfer") && !t._mirrorOf);
+    const installGroups = {};
+    installs.forEach(t => {
+      if (!installGroups[t.groupId]) installGroups[t.groupId] = [];
+      installGroups[t.groupId].push(t);
+    });
+    const installList = Object.values(installGroups).map(g => {
+      g.sort((a, b) => a.instNum - b.instNum);
+      const first = g[0];
+      const last = g[g.length - 1];
+      const paid = g.filter(x => x.paid || (x.dueDate || x.date) < mk).length;
+      const remaining = g.reduce((s, x) => s + (x.paid ? 0 : x.amount), 0);
+      return { desc: first.description, instTotal: first.instTotal, paid, amount: first.instUnitAmount || first.amount, remaining, lastDate: last.dueDate || last.date };
+    }).sort((a, b) => b.remaining - a.remaining);
+    const installTotal = installList.reduce((s, g) => s + g.amount, 0);
+
+    // Committed income
+    const committed = recurTotal + installTotal;
+    const commitPct = mIncome > 0 ? Math.round((committed / mIncome) * 100) : 0;
+    const freePct = 100 - Math.min(commitPct, 100);
+
+    // Evolution (6 months)
+    const evo = [];
+    for (let i = 5; i >= 0; i--) {
+      let em = month.m - i;
+      let ey = month.y;
+      while (em < 0) { em += 12; ey--; }
+      const eTxs = getMonthAll(dTxs, { y: ey, m: em });
+      const eInc = eTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+      const eExp = eTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+      evo.push({ m: MONTHS[em].substring(0, 3), inc: eInc, exp: eExp });
+    }
+    const evoMax = Math.max(...evo.map(e => Math.max(e.inc, e.exp)), 1);
+
+    const card = (title, children) => h("div", { style: { background: C.card, borderRadius: 14, padding: "14px 16px", border: "1px solid " + C.cardBorder } }, h("h3", { style: { fontSize: 13, fontWeight: 700, color: C.textSec, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 } }, title), children);
+
+    return h("div", { style: { ...ST.app, paddingBottom: 100 } },
+      // Header
+      h("header", { style: ST.header },
+        h("button", { style: ST.navBtn, onClick: popView }, h(IcoBack, null)),
+        h("h1", { style: { fontSize: 17, fontWeight: 700, color: C.text } }, "Dashboard"),
+        h("div")
+      ),
+      // Profile filter
+      h("div", { style: { display: "flex", gap: 6, padding: "0 16px 10px", flexWrap: "wrap" } },
+        h("button", { style: { ...ST.toggleBtn, ...(allSelected ? ST.toggleActive : {}), fontSize: 11, padding: "4px 10px" }, onClick: selectAll }, "Todos"),
+        ...profiles.map(p => h("button", { key: p.id, style: { ...ST.toggleBtn, ...(dashProfiles.includes(p.id) ? { background: p.color, color: "#fff", borderColor: p.color } : {}), fontSize: 11, padding: "4px 10px" }, onClick: () => toggleDashProfile(p.id) }, p.name))
+      ),
+      // Month nav
+      h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "0 16px 12px" } },
+        h("button", { style: ST.navBtn, onClick: () => navMonth(-1) }, h(IcoChevL, null)),
+        h("span", { style: ST.monthLbl }, MONTHS[month.m], " ", month.y),
+        h("button", { style: ST.navBtn, onClick: () => navMonth(1) }, h(IcoChevR, null))
+      ),
+      // Content
+      h("div", { style: { display: "flex", flexDirection: "column", gap: 12, padding: "0 16px" } },
+
+        // 1. Resumo
+        card("Resumo do Mês", h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between" } },
+            h("span", { style: { color: C.textSec, fontSize: 13 } }, "Entradas"),
+            h("span", { style: { color: C.green, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mIncome))
+          ),
+          h("div", { style: { display: "flex", justifyContent: "space-between" } },
+            h("span", { style: { color: C.textSec, fontSize: 13 } }, "Saídas"),
+            h("span", { style: { color: C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mExpense))
+          ),
+          h("div", { style: { display: "flex", justifyContent: "space-between", borderTop: "1px solid " + C.cardBorder, paddingTop: 8 } },
+            h("span", { style: { color: C.text, fontSize: 13, fontWeight: 600 } }, "Economia"),
+            h("span", { style: { color: mSaved >= 0 ? C.green : C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mSaved), " (", mPct, "%)")
+          ),
+          pExpense > 0 && h("div", { style: { fontSize: 12, color: expDiff > 0 ? C.red : C.green, marginTop: 2 } },
+            expDiff > 0 ? "↑ Gastou " + fmt(expDiff) + " a mais que " + MONTHS[prevM.m].toLowerCase() : expDiff < 0 ? "↓ Gastou " + fmt(Math.abs(expDiff)) + " a menos que " + MONTHS[prevM.m].toLowerCase() : "= Mesmo gasto que " + MONTHS[prevM.m].toLowerCase()
+          )
+        )),
+
+        // 2. Gastos por Categoria
+        card("Gastos por Categoria", catList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos neste mês") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+          ...catList.map(([cat, val]) => h("div", { key: cat },
+            h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 } },
+              h("span", { style: { color: C.text } }, cat),
+              h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace" } }, fmt(val), " (", Math.round(val / mExpense * 100), "%)")
+            ),
+            h("div", { style: { height: 8, borderRadius: 4, background: C.inputBg, overflow: "hidden" } },
+              h("div", { style: { height: "100%", borderRadius: 4, background: C.blue, width: Math.round(val / catMax * 100) + "%" } })
+            )
+          ))
+        )),
+
+        // 3. Top 5
+        card("Top 5 Maiores Gastos", top5.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          ...top5.map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 } },
+              h("span", { style: { background: C.red, color: "#fff", borderRadius: 6, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 } }, i + 1),
+              h("span", { style: { color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, t.description)
+            ),
+            h("span", { style: { color: C.red, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, marginLeft: 8 } }, fmt(t.amount))
+          ))
+        )),
+
+        // 4. Renda Comprometida
+        card("Renda Comprometida", h("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13 } },
+            h("span", { style: { color: C.textSec } }, "Recorrentes"),
+            h("span", { style: { color: C.amber, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" } }, fmt(recurTotal))
+          ),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13 } },
+            h("span", { style: { color: C.textSec } }, "Parcelas"),
+            h("span", { style: { color: C.purple, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" } }, fmt(installTotal))
+          ),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: "1px solid " + C.cardBorder, paddingTop: 8 } },
+            h("span", { style: { color: C.text, fontWeight: 600 } }, "Total comprometido"),
+            h("span", { style: { color: C.red, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(committed))
+          ),
+          // Ring chart
+          mIncome > 0 && h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginTop: 6 } },
+            h("svg", { width: 100, height: 100, viewBox: "0 0 36 36" },
+              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.inputBg, strokeWidth: 3 }),
+              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.amber, strokeWidth: 3, strokeDasharray: Math.min(recurTotal / mIncome * 100, 100) + " 100", strokeDashoffset: 25, strokeLinecap: "round" }),
+              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.purple, strokeWidth: 3, strokeDasharray: Math.min(installTotal / mIncome * 100, 100) + " 100", strokeDashoffset: 25 - Math.min(recurTotal / mIncome * 100, 100), strokeLinecap: "round" }),
+              h("text", { x: 18, y: 19, textAnchor: "middle", dominantBaseline: "middle", fontSize: 7, fontWeight: 700, fill: C.text }, commitPct + "%")
+            ),
+            h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 11 } },
+              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, h("div", { style: { width: 10, height: 10, borderRadius: 3, background: C.amber } }), h("span", { style: { color: C.textSec } }, "Recorrentes")),
+              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, h("div", { style: { width: 10, height: 10, borderRadius: 3, background: C.purple } }), h("span", { style: { color: C.textSec } }, "Parcelas")),
+              h("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, h("div", { style: { width: 10, height: 10, borderRadius: 3, background: C.green } }), h("span", { style: { color: C.textSec } }, freePct + "% livre"))
+            )
+          )
+        )),
+
+        // 5. Recorrentes
+        card("Despesas Recorrentes (" + recur.length + ")", recur.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Nenhuma despesa recorrente") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          ...recur.sort((a, b) => b.amount - a.amount).map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: i < recur.length - 1 ? "1px solid " + C.cardBorder : "none" } },
+            h("span", { style: { color: C.text, flex: 1 } }, t.description),
+            h("span", { style: { color: C.amber, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" } }, fmt(t.amount), "/mês")
+          ))
+        )),
+
+        // 6. Parceladas
+        card("Compras Parceladas (" + installList.length + ")", installList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Nenhuma compra parcelada") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+          ...installList.map((g, i) => h("div", { key: i, style: { padding: "6px 0", borderBottom: i < installList.length - 1 ? "1px solid " + C.cardBorder : "none" } },
+            h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13 } },
+              h("span", { style: { color: C.text, fontWeight: 600 } }, g.desc),
+              h("span", { style: { color: C.purple, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" } }, fmt(g.amount), "/mês")
+            ),
+            h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 11, color: C.textSec, marginTop: 3 } },
+              h("span", null, g.paid, "/", g.instTotal, " pagas"),
+              h("span", null, "Falta: ", fmt(g.remaining))
+            ),
+            h("div", { style: { height: 4, borderRadius: 2, background: C.inputBg, marginTop: 4, overflow: "hidden" } },
+              h("div", { style: { height: "100%", borderRadius: 2, background: C.purple, width: Math.round(g.paid / g.instTotal * 100) + "%" } })
+            )
+          ))
+        )),
+
+        // 7. Evolução 6 meses
+        card("Evolução (6 meses)", h("div", null,
+          h("div", { style: { display: "flex", alignItems: "flex-end", gap: 4, height: 120, padding: "0 4px" } },
+            ...evo.map((e, i) => h("div", { key: i, style: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 } },
+              h("div", { style: { width: "100%", display: "flex", gap: 2, alignItems: "flex-end", height: 100 } },
+                h("div", { style: { flex: 1, background: C.green, borderRadius: "3px 3px 0 0", height: Math.max(e.inc / evoMax * 100, 2) + "%", opacity: 0.8 } }),
+                h("div", { style: { flex: 1, background: C.red, borderRadius: "3px 3px 0 0", height: Math.max(e.exp / evoMax * 100, 2) + "%", opacity: 0.8 } })
+              ),
+              h("span", { style: { fontSize: 9, color: C.textSec, marginTop: 2 } }, e.m)
+            ))
+          ),
+          h("div", { style: { display: "flex", justifyContent: "center", gap: 16, marginTop: 10, fontSize: 11 } },
+            h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("div", { style: { width: 10, height: 10, borderRadius: 2, background: C.green, opacity: 0.8 } }), h("span", { style: { color: C.textSec } }, "Entradas")),
+            h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("div", { style: { width: 10, height: 10, borderRadius: 2, background: C.red, opacity: 0.8 } }), h("span", { style: { color: C.textSec } }, "Saídas"))
+          )
+        ))
+      )
+    );
+  }
+
   /* ═══ HOME ═══ */
   if (view === "home") return /*#__PURE__*/h("div", {
     style: ST.app,
@@ -2871,6 +3121,9 @@ function App() {
     style: ST.navBtn,
     onClick: () => setSearchOpen(true)
   }, /*#__PURE__*/h(IcoSearch, null)), /*#__PURE__*/h("button", {
+    style: {...ST.navBtn, fontSize: 16},
+    onClick: () => pushView("dashboard")
+  }, "\uD83D\uDCCA"), /*#__PURE__*/h("button", {
     style: ST.navBtn,
     onClick: () => navMonth(-1)
   }, /*#__PURE__*/h(IcoChevL, null)), /*#__PURE__*/h("span", {
