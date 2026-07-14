@@ -1820,6 +1820,30 @@ function App() {
               paidMonths: pm
             } : t);
           }
+          // Also update mirror's monthOverrides
+          if (orig.type === "transfer" || orig.type === "transfer_in") {
+            const mirrorId = orig.type === "transfer" ? p.find(t => t._mirrorOf === id)?.id : orig._mirrorOf;
+            if (mirrorId) {
+              const mirrorOrig = p.find(t => t.id === mirrorId);
+              if (mirrorOrig) {
+                const mof = {};
+                if (overrideFields.description) mof.description = overrideFields.description;
+                if (overrideFields.amount !== undefined) mof.amount = overrideFields.amount;
+                if (overrideFields.date) mof.date = overrideFields.date;
+                if (overrideFields.dueDate !== undefined) mof.dueDate = overrideFields.dueDate;
+                if (overrideFields.category) mof.category = overrideFields.category;
+                const mmo = mirrorOrig.monthOverrides ? { ...mirrorOrig.monthOverrides } : {};
+                mmo[mKey] = { ...mmo[mKey], ...mof };
+                updated = updated.map(t => t.id === mirrorId ? { ...t, monthOverrides: mmo } : t);
+                if (clean.paid !== undefined) {
+                  const mpm = mirrorOrig.paidMonths ? [...mirrorOrig.paidMonths] : [];
+                  if (clean.paid && !mpm.includes(mKey)) mpm.push(mKey);
+                  else if (!clean.paid) { const idx = mpm.indexOf(mKey); if (idx >= 0) mpm.splice(idx, 1); }
+                  updated = updated.map(t => t.id === mirrorId ? { ...t, paidMonths: mpm } : t);
+                }
+              }
+            }
+          }
           return updated.sort((a, b) => a.date.localeCompare(b.date));
         }
         if (recurScope === "forward") {
@@ -1890,13 +1914,23 @@ function App() {
           if (clean[k] !== undefined) groupFields[k] = clean[k];
         });
         if (clean.amount !== undefined) groupFields.instUnitAmount = clean.amount;
+        // Extract new day from date/dueDate to apply to each installment's month
+        const newDateDay = clean.date ? clean.date.split("-")[2] : null;
+        const newDueDay = clean.dueDate ? clean.dueDate.split("-")[2] : null;
+        const applyDay = (origDate, newDay) => {
+          if (!origDate || !newDay) return origDate;
+          const parts = origDate.split("-");
+          return parts[0] + "-" + parts[1] + "-" + newDay;
+        };
         if (recurScope === "instForward") {
           let updated = p.map(t => {
             // Main transactions (not mirrors)
-            if (t.groupId === orig.groupId && t.instNum >= orig.instNum && !t._mirrorOf && t.type !== "transfer_in") return {
-              ...t,
-              ...groupFields
-            };
+            if (t.groupId === orig.groupId && t.instNum >= orig.instNum && !t._mirrorOf && t.type !== "transfer_in") {
+              const patched = { ...t, ...groupFields };
+              if (newDateDay) patched.date = applyDay(t.date, newDateDay);
+              if (newDueDay) patched.dueDate = applyDay(t.dueDate, newDueDay);
+              return patched;
+            }
             // Mirrors via _mirrorOf
             if (t._mirrorOf) {
               const parent = p.find(x => x.id === t._mirrorOf);
@@ -1906,10 +1940,9 @@ function App() {
                 if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
                 if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
                 if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-                return {
-                  ...t,
-                  ...mf
-                };
+                if (newDateDay) mf.date = applyDay(t.date, newDateDay);
+                if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+                return { ...t, ...mf };
               }
             }
             // Mirrors via groupId + transfer_in (in case _mirrorOf is missing)
@@ -1919,6 +1952,8 @@ function App() {
               if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
               if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
               if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
+              if (newDateDay) mf.date = applyDay(t.date, newDateDay);
+              if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
               return { ...t, ...mf };
             }
             return t;
@@ -1928,10 +1963,12 @@ function App() {
         if (recurScope === "instAll") {
           let updated = p.map(t => {
             // Main transactions (not mirrors)
-            if (t.groupId === orig.groupId && !t._mirrorOf && t.type !== "transfer_in") return {
-              ...t,
-              ...groupFields
-            };
+            if (t.groupId === orig.groupId && !t._mirrorOf && t.type !== "transfer_in") {
+              const patched = { ...t, ...groupFields };
+              if (newDateDay) patched.date = applyDay(t.date, newDateDay);
+              if (newDueDay) patched.dueDate = applyDay(t.dueDate, newDueDay);
+              return patched;
+            }
             // Mirrors via _mirrorOf
             if (t._mirrorOf) {
               const parent = p.find(x => x.id === t._mirrorOf);
@@ -1941,10 +1978,9 @@ function App() {
                 if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
                 if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
                 if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-                return {
-                  ...t,
-                  ...mf
-                };
+                if (newDateDay) mf.date = applyDay(t.date, newDateDay);
+                if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+                return { ...t, ...mf };
               }
             }
             // Mirrors via groupId + transfer_in
@@ -1954,6 +1990,8 @@ function App() {
               if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
               if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
               if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
+              if (newDateDay) mf.date = applyDay(t.date, newDateDay);
+              if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
               return { ...t, ...mf };
             }
             return t;
@@ -2070,19 +2108,38 @@ function App() {
         }
         // "all" falls through to normal move
       }
-      // Move all installments in group
+      // Move installments with scope
       if (t.groupId) {
-        let u = p.map(x => x.groupId === t.groupId ? {
-          ...x,
-          accountId: nid
-        } : x);
-        // Update mirrors
-        const groupIds = p.filter(x => x.groupId === t.groupId).map(x => x.id);
+        if (recurScope === "instThis") {
+          // Move only this parcel
+          let u = p.map(x => x.id === id ? { ...x, accountId: nid } : x);
+          const mirror = p.find(x => x._mirrorOf === id);
+          if (mirror) u = u.map(x => x.id === mirror.id ? { ...x, fromAccountId: nid } : x);
+          return u;
+        }
+        if (recurScope === "instForward") {
+          // Move this and future parcels
+          let u = p.map(x => {
+            if (x.groupId === t.groupId && x.instNum >= t.instNum && !x._mirrorOf && x.type !== "transfer_in") return { ...x, accountId: nid };
+            return x;
+          });
+          const fwdIds = p.filter(x => x.groupId === t.groupId && x.instNum >= t.instNum && !x._mirrorOf && x.type !== "transfer_in").map(x => x.id);
+          u = u.map(x => {
+            if (x._mirrorOf && fwdIds.includes(x._mirrorOf)) return { ...x, fromAccountId: nid };
+            if (x.groupId === t.groupId && x.instNum >= t.instNum && x.type === "transfer_in") return { ...x, fromAccountId: nid };
+            return x;
+          });
+          return u;
+        }
+        // "instAll" or no scope: move all parcels
+        let u = p.map(x => {
+          if (x.groupId === t.groupId && !x._mirrorOf && x.type !== "transfer_in") return { ...x, accountId: nid };
+          return x;
+        });
+        const groupIds = p.filter(x => x.groupId === t.groupId && !x._mirrorOf && x.type !== "transfer_in").map(x => x.id);
         u = u.map(x => {
-          if (x._mirrorOf && groupIds.includes(x._mirrorOf)) return {
-            ...x,
-            fromAccountId: nid
-          };
+          if (x._mirrorOf && groupIds.includes(x._mirrorOf)) return { ...x, fromAccountId: nid };
+          if (x.groupId === t.groupId && x.type === "transfer_in") return { ...x, fromAccountId: nid };
           return x;
         });
         return u;
@@ -3676,13 +3733,16 @@ function App() {
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap",
-      color: C.text
-    }
+      color: C.text,
+      cursor: "pointer",
+      position: "relative"
+    },
+    onClick: () => setModal("switchAcct")
   }, /*#__PURE__*/h("span", {
     style: {
       color: curAcct?.color
     }
-  }, isBank ? "🏦" : "💳"), " ", curAcct?.name)), /*#__PURE__*/h("button", {
+  }, isBank ? "🏦" : "💳"), " ", curAcct?.name, " ▾")), /*#__PURE__*/h("button", {
     style: {
       ...ST.navBtn,
       padding: 8
@@ -4129,7 +4189,7 @@ function App() {
         borderColor: C.purple
       },
       onClick: () => {
-        if (ei._virtual && ei.isRecurring) setModal("moveRecurScope");else setModal("moveTx");
+        if (ei._virtual && ei.isRecurring) setModal("moveRecurScope");else if (ei.groupId) setModal("moveInstScope");else setModal("moveTx");
       }
     }, /*#__PURE__*/h(IcoMove, null), " Mover"), /*#__PURE__*/h("button", {
       style: {
@@ -4158,6 +4218,27 @@ function App() {
       }
     }, /*#__PURE__*/h(IcoTrash, null), " Excluir")));
   })()), /*#__PURE__*/h(Modal, {
+    open: modal === "switchAcct",
+    onClose: () => setModal(null),
+    title: "Trocar " + (isBank ? "Conta" : "Cartão")
+  }, h("div", { style: { display: "flex", flexDirection: "column", gap: 0 } },
+    (() => {
+      const banks = accounts.filter(a => a.type === "bank" && a.id !== selAcctId);
+      const cards = accounts.filter(a => a.type === "card" && a.id !== selAcctId);
+      const profName = a => { const p = profiles.find(x => x.id === a.profileId); return p ? p.name : ""; };
+      const btn = a => h("button", { key: a.id, style: { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", background: "none", border: "none", borderBottom: "1px solid " + C.cardBorder, cursor: "pointer" }, onClick: () => { setSelAcctId(a.id); setModal(null); } },
+        h("span", { style: { fontSize: 16 } }, a.type === "bank" ? "🏦" : "💳"),
+        h("div", { style: { flex: 1, textAlign: "left" } },
+          h("div", { style: { fontSize: 14, fontWeight: 600, color: a.color } }, a.name),
+          h("div", { style: { fontSize: 11, color: C.textSec } }, profName(a))
+        )
+      );
+      const items = [];
+      if (banks.length) { items.push(h("div", { key: "bl", style: { fontSize: 11, fontWeight: 700, color: C.textSec, padding: "8px 12px 4px", textTransform: "uppercase" } }, "Contas")); banks.forEach(a => items.push(btn(a))); }
+      if (cards.length) { items.push(h("div", { key: "cl", style: { fontSize: 11, fontWeight: 700, color: C.textSec, padding: "8px 12px 4px", textTransform: "uppercase" } }, "Cartões")); cards.forEach(a => items.push(btn(a))); }
+      return items;
+    })()
+  )), /*#__PURE__*/h(Modal, {
     open: modal === "editAcct",
     onClose: () => setModal(null),
     title: "Editar " + (isBank ? "Conta" : "Cartão")
@@ -4244,6 +4325,14 @@ function App() {
       fontWeight: 700
     }
   }, "\u270E"), " Mover desde a original (todos os meses)"))), /*#__PURE__*/h(Modal, {
+    open: modal === "moveInstScope",
+    onClose: () => { setModal(null); setEditItem(null); },
+    title: "Mover Parcela"
+  }, h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+    h("button", { style: { ...ST.scopeBtn, borderColor: C.green }, onClick: () => { setEditItem(prev => ({...prev, _moveScope: "instThis"})); setModal("moveTx"); } }, "Mover apenas esta parcela"),
+    h("button", { style: { ...ST.scopeBtn, borderColor: C.amber }, onClick: () => { setEditItem(prev => ({...prev, _moveScope: "instForward"})); setModal("moveTx"); } }, "Mover desta parcela em diante"),
+    h("button", { style: { ...ST.scopeBtn, borderColor: C.blue }, onClick: () => { setEditItem(prev => ({...prev, _moveScope: "instAll"})); setModal("moveTx"); } }, "Mover todas as parcelas")
+  )), /*#__PURE__*/h(Modal, {
     open: modal === "moveTx",
     onClose: () => {
       setModal(null);
