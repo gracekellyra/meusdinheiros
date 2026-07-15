@@ -29,8 +29,8 @@ input:focus,select:focus{outline:none;border-color:#6366f1 !important}
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(reg=>{reg.update();reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw.addEventListener('statechange',()=>{if(nw.state==='activated')window.location.reload()})})}).catch(()=>{})})}
 </script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.development.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.development.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1590,6 +1590,8 @@ function App() {
   });
   const dismissBackup = () => { setShowBackupReminder(false); };
 
+  const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
+
   const exportData = async () => {
     const pwd = prompt("Crie uma senha para proteger o backup:");
     if (!pwd) return;
@@ -2920,7 +2922,6 @@ function App() {
   })));
 
   /* ═══ DASHBOARD ═══ */
-  const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
   if (view === "dashboard") {
     const toggleDashProfile = (id) => {
       setDashProfiles(prev => {
