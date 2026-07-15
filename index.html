@@ -1522,6 +1522,10 @@ function App() {
     setCurProfileId(np.id);
     setModal(null);
   };
+  const updateProfile = d => {
+    setProfiles(p => p.map(x => x.id === curProfileId ? { ...x, ...d } : x));
+    setModal(null);
+  };
   const deleteProfile = id => {
     if(!confirm("Tem certeza que deseja excluir este perfil?\nTodas as contas, cartões e transações serão apagados."))return;
     const aIds = accounts.filter(a => a.profileId === id).map(a => a.id);
@@ -3311,6 +3315,21 @@ function App() {
       cursor: "pointer",
       borderRadius: 8,
       fontSize: 14,
+      color: C.blue
+    },
+    onClick: () => { setModal("editProfile"); setProfMenuOpen(false); }
+  }, /*#__PURE__*/h(IcoEdit, null), " Editar Perfil"), /*#__PURE__*/h("button", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      padding: "10px 12px",
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 8,
+      fontSize: 14,
       color: C.red
     },
     onClick: () => deleteProfile(curProfileId)
@@ -3703,6 +3722,14 @@ function App() {
     title: "Novo Perfil"
   }, /*#__PURE__*/h(ProfileForm, {
     onSubmit: addProfile
+  })), /*#__PURE__*/h(Modal, {
+    open: modal === "editProfile",
+    onClose: () => setModal(null),
+    title: "Editar Perfil"
+  }, /*#__PURE__*/h(ProfileForm, {
+    key: "edit-" + curProfileId,
+    initial: activeProfile,
+    onSubmit: updateProfile
   })), /*#__PURE__*/h(Modal, {
     open: modal === "newBank",
     onClose: () => setModal(null),
@@ -4709,10 +4736,11 @@ function App() {
 
 /* Forms */
 function ProfileForm({
-  onSubmit
+  onSubmit,
+  initial
 }) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(PROF_COLORS[0]);
+  const [name, setName] = useState(initial?.name || "");
+  const [color, setColor] = useState(initial?.color || PROF_COLORS[0]);
   const [tried, setTried] = useState(false);
   const handleSubmit = () => {
     setTried(true);
@@ -4756,7 +4784,7 @@ function ProfileForm({
   })))), /*#__PURE__*/h("button", {
     style: {...ST.submitBtn, opacity: tried && !name.trim() ? 0.5 : 1},
     onClick: handleSubmit
-  }, "Criar Perfil"));
+  }, initial ? "Salvar Perfil" : "Criar Perfil"));
 }
 function AcctForm({
   type,
