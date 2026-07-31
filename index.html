@@ -364,7 +364,7 @@ const CAT_TREE = {
   "Serviços": ["Assinaturas", "Celular", "Seguros", "Contabilidade", "Outros"],
   "Pets": ["Ração", "Veterinário", "Acessórios", "Outros"],
   "Pessoal": ["Beleza", "Cuidados pessoais", "Outros"],
-  "Marketing Digital": ["Tráfego pago", "Ferramentas", "Plataformas", "Produção de conteúdo", "Equipamentos", "Assessoria", "Cursos", "Comissão plataforma", "Publi/Parceria", "Plataformas digitais", "Outros"],
+  "Marketing Digital": ["Tráfego pago", "Ferramentas", "Plataformas", "Produção de conteúdo", "Equipamentos", "Assessoria", "Cursos", "Comissão plataforma", "Publi/Parceria", "Plataformas digitais", "Imposto", "Outros"],
   "Outros": ["Outros"]
 };
 const CAT_KEYS = Object.keys(CAT_TREE);
@@ -1595,6 +1595,7 @@ function App() {
   const dismissBackup = () => { setShowBackupReminder(false); };
 
   const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
+  const [dashCatDetail, setDashCatDetail] = useState(null);
 
   const exportData = async () => {
     const pwd = prompt("Crie uma senha para proteger o backup:");
@@ -1615,17 +1616,19 @@ function App() {
       });
       const encrypted = await encryptData(json, pwd);
       const fileName = "financas-backup-" + td().replace(/-/g, "") + ".bkp";
-      const file = new File([encrypted], fileName, { type: "application/octet-stream" });
 
-      // Try native share (mobile)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: "Backup Finanças",
-          text: "Backup criptografado do app Finanças",
-          files: [file]
-        });
-      } else {
-        // Fallback: download
+      // Try native share first, fallback to download
+      let shared = false;
+      try {
+        const file = new File([encrypted], fileName, { type: "application/octet-stream" });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ title: "Backup Finanças", files: [file] });
+          shared = true;
+        }
+      } catch (e) {
+        if (e.name === "AbortError") { setProfMenuOpen(false); return; }
+      }
+      if (!shared) {
         const blob = new Blob([encrypted], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -1641,7 +1644,7 @@ function App() {
       setShowBackupReminder(false);
       alert("Backup exportado com sucesso!\nGuarde a senha — sem ela não é possível restaurar.");
     } catch (e) {
-      if (e.name !== "AbortError") alert("Erro ao exportar.");
+      alert("Erro ao exportar: " + (e.message || e));
     }
     setProfMenuOpen(false);
   };
@@ -1943,21 +1946,36 @@ function App() {
           if (clean[k] !== undefined) groupFields[k] = clean[k];
         });
         if (clean.amount !== undefined) groupFields.instUnitAmount = clean.amount;
-        // Extract new day from date/dueDate to apply to each installment's month
+        // Calculate date offset: if user changed month, shift all installments
         const newDateDay = clean.date ? clean.date.split("-")[2] : null;
         const newDueDay = clean.dueDate ? clean.dueDate.split("-")[2] : null;
-        const applyDay = (origDate, newDay) => {
-          if (!origDate || !newDay) return origDate;
-          const parts = origDate.split("-");
-          return parts[0] + "-" + parts[1] + "-" + newDay;
+        // Calculate month offset from original date
+        let dateMonthOffset = 0;
+        if (clean.date && orig.date) {
+          const origD = new Date(orig.date + "T12:00:00");
+          const newD = new Date(clean.date + "T12:00:00");
+          dateMonthOffset = (newD.getFullYear() - origD.getFullYear()) * 12 + (newD.getMonth() - origD.getMonth());
+        }
+        let dueMonthOffset = 0;
+        if (clean.dueDate && orig.dueDate) {
+          const origD = new Date(orig.dueDate + "T12:00:00");
+          const newD = new Date(clean.dueDate + "T12:00:00");
+          dueMonthOffset = (newD.getFullYear() - origD.getFullYear()) * 12 + (newD.getMonth() - origD.getMonth());
+        }
+        const shiftDate = (origDate, monthOff, newDay) => {
+          if (!origDate) return origDate;
+          const d = new Date(origDate + "T12:00:00");
+          d.setMonth(d.getMonth() + monthOff);
+          const day = newDay || String(d.getDate()).padStart(2, "0");
+          return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + day;
         };
         if (recurScope === "instForward") {
           let updated = p.map(t => {
             // Main transactions (not mirrors)
             if (t.groupId === orig.groupId && t.instNum >= orig.instNum && !t._mirrorOf && t.type !== "transfer_in") {
               const patched = { ...t, ...groupFields };
-              if (newDateDay) patched.date = applyDay(t.date, newDateDay);
-              if (newDueDay) patched.dueDate = applyDay(t.dueDate, newDueDay);
+              if (newDateDay) patched.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+              if (newDueDay) patched.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
               return patched;
             }
             // Mirrors via _mirrorOf
@@ -1969,8 +1987,8 @@ function App() {
                 if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
                 if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
                 if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-                if (newDateDay) mf.date = applyDay(t.date, newDateDay);
-                if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+                if (newDateDay) mf.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+                if (newDueDay) mf.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
                 return { ...t, ...mf };
               }
             }
@@ -1981,8 +1999,8 @@ function App() {
               if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
               if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
               if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-              if (newDateDay) mf.date = applyDay(t.date, newDateDay);
-              if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+              if (newDateDay) mf.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+              if (newDueDay) mf.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
               return { ...t, ...mf };
             }
             return t;
@@ -1994,8 +2012,8 @@ function App() {
             // Main transactions (not mirrors)
             if (t.groupId === orig.groupId && !t._mirrorOf && t.type !== "transfer_in") {
               const patched = { ...t, ...groupFields };
-              if (newDateDay) patched.date = applyDay(t.date, newDateDay);
-              if (newDueDay) patched.dueDate = applyDay(t.dueDate, newDueDay);
+              if (newDateDay) patched.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+              if (newDueDay) patched.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
               return patched;
             }
             // Mirrors via _mirrorOf
@@ -2007,8 +2025,8 @@ function App() {
                 if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
                 if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
                 if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-                if (newDateDay) mf.date = applyDay(t.date, newDateDay);
-                if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+                if (newDateDay) mf.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+                if (newDueDay) mf.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
                 return { ...t, ...mf };
               }
             }
@@ -2019,8 +2037,8 @@ function App() {
               if (groupFields.amount !== undefined) mf.amount = groupFields.amount;
               if (groupFields.instUnitAmount !== undefined) mf.instUnitAmount = groupFields.instUnitAmount;
               if (groupFields.accountId) mf.fromAccountId = groupFields.accountId;
-              if (newDateDay) mf.date = applyDay(t.date, newDateDay);
-              if (newDueDay) mf.dueDate = applyDay(t.dueDate, newDueDay);
+              if (newDateDay) mf.date = shiftDate(t.date, dateMonthOffset, newDateDay);
+              if (newDueDay) mf.dueDate = shiftDate(t.dueDate, dueMonthOffset, newDueDay);
               return { ...t, ...mf };
             }
             return t;
@@ -2330,6 +2348,7 @@ function App() {
     txs.filter(t => t.accountId === acctId).forEach(t => {
       if (t.isRecurring) {
         const txD = new Date((isCard ? t.dueDate || t.date : t.date) + "T12:00:00");
+        const origD = new Date(t.date + "T12:00:00");
         const eom = new Date(month.y, month.m + 1, 0);
         if (t.endDate) {
           const ed = new Date(t.endDate + "T12:00:00");
@@ -2341,11 +2360,13 @@ function App() {
         if (txD <= eom) {
           const isPd = (t.paidMonths || []).includes(mKey);
           const overrides = t.monthOverrides && t.monthOverrides[mKey] ? t.monthOverrides[mKey] : {};
-          const defaultDate = mKey + "-" + String(txD.getDate()).padStart(2, "0");
+          const displayDay = String(origD.getDate()).padStart(2, "0");
+          const dueDay = String(txD.getDate()).padStart(2, "0");
           items.push({
             ...t,
             ...overrides,
-            date: overrides.date || defaultDate,
+            date: overrides.date || mKey + "-" + displayDay,
+            dueDate: overrides.dueDate || (t.dueDate ? mKey + "-" + dueDay : undefined),
             _virtual: true,
             _recurPaid: isPd
           });
@@ -2371,12 +2392,15 @@ function App() {
       if (txD <= eom) {
         const isPd = (t.paidMonths || []).includes(mKey);
         const overrides = t.monthOverrides[mKey] || {};
-        const defaultDate = mKey + "-" + String(txD.getDate()).padStart(2, "0");
+        const origD2 = new Date(t.date + "T12:00:00");
+        const displayDay = String(origD2.getDate()).padStart(2, "0");
+        const dueDay = String(txD.getDate()).padStart(2, "0");
         items.push({
           ...t,
           ...overrides,
           accountId: acctId,
-          date: overrides.date || defaultDate,
+          date: overrides.date || mKey + "-" + displayDay,
+          dueDate: overrides.dueDate || (t.dueDate ? mKey + "-" + dueDay : undefined),
           _virtual: true,
           _recurPaid: isPd,
           _movedFrom: t.accountId
@@ -3077,9 +3101,9 @@ function App() {
 
         // 2. Gastos por Categoria
         card("Gastos por Categoria", catList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos neste mês") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-          ...catList.map(([cat, val]) => h("div", { key: cat },
+          ...catList.map(([cat, val]) => h("div", { key: cat, style: { cursor: "pointer" }, onClick: () => setDashCatDetail(cat) },
             h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 } },
-              h("span", { style: { color: C.text } }, cat),
+              h("span", { style: { color: C.text, fontWeight: 500 } }, cat, " ▸"),
               h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace" } }, fmt(val), " (", Math.round(val / mExpense * 100), "%)")
             ),
             h("div", { style: { height: 8, borderRadius: 4, background: C.inputBg, overflow: "hidden" } },
@@ -3087,6 +3111,28 @@ function App() {
             )
           ))
         )),
+        // Category detail popup
+        dashCatDetail && h(Modal, { open: true, onClose: () => setDashCatDetail(null), title: dashCatDetail },
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 0, maxHeight: "60vh", overflowY: "auto" } },
+            (() => {
+              const catTxs = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && (t.category || "Outros > Outros").split(" > ")[0] === dashCatDetail).sort((a, b) => b.amount - a.amount);
+              const catTotal = catTxs.reduce((s, t) => s + t.amount, 0);
+              return [
+                h("div", { key: "total", style: { padding: "8px 0 12px", borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 700 } },
+                  h("span", { style: { color: C.text } }, catTxs.length, " transaç", catTxs.length === 1 ? "ão" : "ões"),
+                  h("span", { style: { color: C.red, fontFamily: "'JetBrains Mono',monospace" } }, fmt(catTotal))
+                ),
+                ...catTxs.map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < catTxs.length - 1 ? "1px solid " + C.cardBorder : "none" } },
+                  h("div", { style: { flex: 1, minWidth: 0 } },
+                    h("div", { style: { fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, t.description),
+                    h("div", { style: { fontSize: 11, color: C.textSec } }, (t.category || "").split(" > ")[1] || "", " · ", (t.date || "").split("-").reverse().join("/"))
+                  ),
+                  h("span", { style: { color: C.red, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", marginLeft: 8, flexShrink: 0 } }, fmt(t.amount))
+                ))
+              ];
+            })()
+          )
+        ),
 
         // 3. Top 5
         card("Top 5 Maiores Gastos", top5.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
