@@ -3239,14 +3239,21 @@ function App() {
       color: activeProfile.color,
       cursor: "pointer",
       fontSize: 14,
-      fontWeight: 600
+      fontWeight: 600,
+      overflow: "hidden",
+      whiteSpace: "nowrap",
+      textOverflow: "ellipsis",
+      minWidth: 0,
+      flexShrink: 1,
+      maxWidth: "45%"
     },
     onClick: () => setProfMenuOpen(!profMenuOpen)
   }, /*#__PURE__*/h(IcoUser, null), " ", activeProfile.name), /*#__PURE__*/h("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 4
+      gap: 4,
+      flexShrink: 0
     }
   }, /*#__PURE__*/h("button", {
     style: ST.navBtn,
