@@ -1824,35 +1824,38 @@ function App() {
       // Recurring: scope handling
       if (orig.isRecurring && recurScope) {
         if (recurScope === "this") {
-          // Save only changed editable fields as override (no paid - that's separate)
           const overrideFields = {};
           ["description", "amount", "date", "category", "dueDate"].forEach(k => {
             if (clean[k] !== undefined) overrideFields[k] = clean[k];
           });
-          const mo = orig.monthOverrides ? {
-            ...orig.monthOverrides
-          } : {};
-          mo[mKey] = {
-            ...mo[mKey],
-            ...overrideFields
-          };
-          // Handle paid separately via paidMonths
-          let updated = p.map(t => t.id === id ? {
-            ...t,
-            monthOverrides: mo
-          } : t);
+
+          // Detect if date moved to a different month
+          const newDate = clean.date || clean.dueDate;
+          const targetMonth = newDate ? newDate.substring(0, 7) : null;
+          const movedMonth = targetMonth && targetMonth !== mKey;
+
+          const mo = orig.monthOverrides ? { ...orig.monthOverrides } : {};
+
+          if (movedMonth) {
+            // Mark current month as moved away
+            mo[mKey] = { ...mo[mKey], _movedTo: targetMonth };
+            // Add override in target month with new data
+            mo[targetMonth] = { ...mo[targetMonth], ...overrideFields, _movedFrom: mKey };
+          } else {
+            mo[mKey] = { ...mo[mKey], ...overrideFields };
+          }
+
+          let updated = p.map(t => t.id === id ? { ...t, monthOverrides: mo } : t);
           if (clean.paid !== undefined) {
+            const pk = movedMonth ? targetMonth : mKey;
             const pm = orig.paidMonths ? [...orig.paidMonths] : [];
-            if (clean.paid && !pm.includes(mKey)) pm.push(mKey);else if (!clean.paid) {
-              const idx = pm.indexOf(mKey);
+            if (clean.paid && !pm.includes(pk)) pm.push(pk);else if (!clean.paid) {
+              const idx = pm.indexOf(pk);
               if (idx >= 0) pm.splice(idx, 1);
             }
-            updated = updated.map(t => t.id === id ? {
-              ...t,
-              paidMonths: pm
-            } : t);
+            updated = updated.map(t => t.id === id ? { ...t, paidMonths: pm } : t);
           }
-          // Also update mirror's monthOverrides
+          // Also update mirror
           if (orig.type === "transfer" || orig.type === "transfer_in") {
             const mirrorId = orig.type === "transfer" ? p.find(t => t._mirrorOf === id)?.id : orig._mirrorOf;
             if (mirrorId) {
@@ -1865,12 +1868,18 @@ function App() {
                 if (overrideFields.dueDate !== undefined) mof.dueDate = overrideFields.dueDate;
                 if (overrideFields.category) mof.category = overrideFields.category;
                 const mmo = mirrorOrig.monthOverrides ? { ...mirrorOrig.monthOverrides } : {};
-                mmo[mKey] = { ...mmo[mKey], ...mof };
+                if (movedMonth) {
+                  mmo[mKey] = { ...mmo[mKey], _movedTo: targetMonth };
+                  mmo[targetMonth] = { ...mmo[targetMonth], ...mof, _movedFrom: mKey };
+                } else {
+                  mmo[mKey] = { ...mmo[mKey], ...mof };
+                }
                 updated = updated.map(t => t.id === mirrorId ? { ...t, monthOverrides: mmo } : t);
                 if (clean.paid !== undefined) {
+                  const pk = movedMonth ? targetMonth : mKey;
                   const mpm = mirrorOrig.paidMonths ? [...mirrorOrig.paidMonths] : [];
-                  if (clean.paid && !mpm.includes(mKey)) mpm.push(mKey);
-                  else if (!clean.paid) { const idx = mpm.indexOf(mKey); if (idx >= 0) mpm.splice(idx, 1); }
+                  if (clean.paid && !mpm.includes(pk)) mpm.push(pk);
+                  else if (!clean.paid) { const idx = mpm.indexOf(pk); if (idx >= 0) mpm.splice(idx, 1); }
                   updated = updated.map(t => t.id === mirrorId ? { ...t, paidMonths: mpm } : t);
                 }
               }
@@ -3997,8 +4006,8 @@ function App() {
           return updated;
         });
         const r = () => window.scrollTo(0, scrollY);
-        let count = 0;
-        const lock = () => { r(); count++; if (count < 30) requestAnimationFrame(lock); };
+        const end = Date.now() + 2000;
+        const lock = () => { r(); if (Date.now() < end) requestAnimationFrame(lock); };
         requestAnimationFrame(lock);
       }
     }, allPaid ? "☐ Desmarcar todas" : "☑ Marcar todas como pagas"));
@@ -4082,8 +4091,8 @@ function App() {
           const scrollY = window.scrollY;
           if (isRecurVirtual) toggleRecurPaid(t.id, mKey);else togglePaid(t.id);
           const r = () => window.scrollTo(0, scrollY);
-          let count = 0;
-          const lock = () => { r(); count++; if (count < 30) requestAnimationFrame(lock); };
+          const end = Date.now() + 2000;
+          const lock = () => { r(); if (Date.now() < end) requestAnimationFrame(lock); };
           requestAnimationFrame(lock);
         }
       }, isPaid && /*#__PURE__*/h(IcoCheck, null)), /*#__PURE__*/h("div", {
