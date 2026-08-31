@@ -363,7 +363,7 @@ const CAT_TREE = {
   "Compras": ["Eletrônicos", "Móveis", "Eletrodomésticos", "Presentes", "Acessórios", "Outros"],
   "Serviços": ["Assinaturas", "Celular", "Seguros", "Contabilidade", "Outros"],
   "Pets": ["Ração", "Veterinário", "Acessórios", "Outros"],
-  "Pessoal": ["Beleza", "Cuidados pessoais", "Outros"],
+  "Pessoal": ["Beleza", "Cuidados pessoais", "Dízimo", "Outros"],
   "Marketing Digital": ["Tráfego pago", "Ferramentas", "Plataformas", "Produção de conteúdo", "Equipamentos", "Assessoria", "Cursos", "Comissão plataforma", "Publi/Parceria", "Plataformas digitais", "Imposto", "Outros"],
   "Outros": ["Outros"]
 };
@@ -3003,20 +3003,22 @@ function App() {
     };
 
     const mTxs = getMonthAll(dTxs, month);
+    // Exclude transfers between accounts of the same profile selection
+    const isInternalTransfer = t => t.type === "transfer" && dAcctIds.includes(t.toAccountId);
     const mIncome = mTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    const mExpense = mTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+    const mExpense = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
     const mSaved = mIncome - mExpense;
     const mPct = mIncome > 0 ? Math.round((mSaved / mIncome) * 100) : 0;
 
     // Previous month comparison
     const prevM = { y: month.m === 0 ? month.y - 1 : month.y, m: month.m === 0 ? 11 : month.m - 1 };
     const pTxs = getMonthAll(dTxs, prevM);
-    const pExpense = pTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+    const pExpense = pTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
     const expDiff = mExpense - pExpense;
 
     // Category breakdown
     const catMap = {};
-    mTxs.filter(t => t.type === "expense" || t.type === "transfer").forEach(t => {
+    mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).forEach(t => {
       const cat = (t.category || "Outros > Outros").split(" > ")[0];
       catMap[cat] = (catMap[cat] || 0) + t.amount;
     });
@@ -3024,10 +3026,10 @@ function App() {
     const catMax = catList.length > 0 ? catList[0][1] : 1;
 
     // Top 5
-    const top5 = [...mTxs].filter(t => t.type === "expense" || t.type === "transfer").sort((a, b) => b.amount - a.amount).slice(0, 5);
+    const top5 = [...mTxs].filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).sort((a, b) => b.amount - a.amount).slice(0, 5);
 
-    // Recurring debts (active)
-    const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate);
+    // Recurring debts (active) - exclude internal transfers
+    const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate && !isInternalTransfer(t));
     const recurTotal = recur.reduce((s, t) => s + t.amount, 0);
 
     // Installments (active)
@@ -3061,7 +3063,7 @@ function App() {
       while (em < 0) { em += 12; ey--; }
       const eTxs = getMonthAll(dTxs, { y: ey, m: em });
       const eInc = eTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-      const eExp = eTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+      const eExp = eTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
       evo.push({ m: MONTHS[em].substring(0, 3), inc: eInc, exp: eExp });
     }
     const evoMax = Math.max(...evo.map(e => Math.max(e.inc, e.exp)), 1);
