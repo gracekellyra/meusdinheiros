@@ -3004,7 +3004,17 @@ function App() {
 
     const mTxs = getMonthAll(dTxs, month);
     // Exclude transfers between accounts of the same profile selection
-    const isInternalTransfer = t => t.type === "transfer" && dAcctIds.includes(t.toAccountId);
+    const isInternalTransfer = t => {
+      if (t.type !== "transfer") return false;
+      // Check by toAccountId
+      if (t.toAccountId && dAcctIds.includes(t.toAccountId)) return true;
+      // Check by fromAccountId (edge case)
+      if (t.fromAccountId && dAcctIds.includes(t.fromAccountId) && dAcctIds.includes(t.accountId)) return true;
+      // Check by mirror: find if mirror exists in selected accounts
+      const mirror = dTxs.find(m => m._mirrorOf === t.id);
+      if (mirror && dAcctIds.includes(mirror.accountId)) return true;
+      return false;
+    };
     const mIncome = mTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
     const mExpense = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
     const mSaved = mIncome - mExpense;
