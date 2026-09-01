@@ -2982,6 +2982,12 @@ function App() {
       const eom = new Date(m.y, m.m + 1, 0);
       src.forEach(t => {
         if (t.type === "transfer_in") return;
+        // Skip internal transfers (both accounts in selected profiles)
+        if (t.type === "transfer") {
+          const destInProfile = t.toAccountId && dAcctIds.includes(t.toAccountId);
+          const mirrorInProfile = !destInProfile && txs.some(m => m._mirrorOf === t.id && dAcctIds.includes(m.accountId));
+          if (destInProfile || mirrorInProfile) return;
+        }
         if (t.isRecurring) {
           const txD = new Date(t.date + "T12:00:00");
           if (txD > eom) return;
@@ -3004,31 +3010,20 @@ function App() {
 
     const mTxs = getMonthAll(dTxs, month);
     // Exclude transfers between accounts of the same profile selection
-    const isInternalTransfer = t => {
-      if (t.type !== "transfer") return false;
-      // Check by toAccountId
-      if (t.toAccountId && dAcctIds.includes(t.toAccountId)) return true;
-      // Check by fromAccountId (edge case)
-      if (t.fromAccountId && dAcctIds.includes(t.fromAccountId) && dAcctIds.includes(t.accountId)) return true;
-      // Check by mirror: find if mirror exists in selected accounts
-      const mirror = dTxs.find(m => m._mirrorOf === t.id);
-      if (mirror && dAcctIds.includes(mirror.accountId)) return true;
-      return false;
-    };
     const mIncome = mTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    const mExpense = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
+    const mExpense = mTxs.filter(t => (t.type === "expense" || t.type === "transfer")).reduce((s, t) => s + t.amount, 0);
     const mSaved = mIncome - mExpense;
     const mPct = mIncome > 0 ? Math.round((mSaved / mIncome) * 100) : 0;
 
     // Previous month comparison
     const prevM = { y: month.m === 0 ? month.y - 1 : month.y, m: month.m === 0 ? 11 : month.m - 1 };
     const pTxs = getMonthAll(dTxs, prevM);
-    const pExpense = pTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
+    const pExpense = pTxs.filter(t => (t.type === "expense" || t.type === "transfer")).reduce((s, t) => s + t.amount, 0);
     const expDiff = mExpense - pExpense;
 
     // Category breakdown
     const catMap = {};
-    mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).forEach(t => {
+    mTxs.filter(t => (t.type === "expense" || t.type === "transfer")).forEach(t => {
       const cat = (t.category || "Outros > Outros").split(" > ")[0];
       catMap[cat] = (catMap[cat] || 0) + t.amount;
     });
@@ -3036,10 +3031,10 @@ function App() {
     const catMax = catList.length > 0 ? catList[0][1] : 1;
 
     // Top 5
-    const top5 = [...mTxs].filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).sort((a, b) => b.amount - a.amount).slice(0, 5);
+    const top5 = [...mTxs].filter(t => (t.type === "expense" || t.type === "transfer")).sort((a, b) => b.amount - a.amount).slice(0, 5);
 
     // Recurring debts (active) - exclude internal transfers
-    const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate && !isInternalTransfer(t));
+    const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate);
     const recurTotal = recur.reduce((s, t) => s + t.amount, 0);
 
     // Installments (active)
@@ -3073,7 +3068,7 @@ function App() {
       while (em < 0) { em += 12; ey--; }
       const eTxs = getMonthAll(dTxs, { y: ey, m: em });
       const eInc = eTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-      const eExp = eTxs.filter(t => (t.type === "expense" || t.type === "transfer") && !isInternalTransfer(t)).reduce((s, t) => s + t.amount, 0);
+      const eExp = eTxs.filter(t => (t.type === "expense" || t.type === "transfer")).reduce((s, t) => s + t.amount, 0);
       evo.push({ m: MONTHS[em].substring(0, 3), inc: eInc, exp: eExp });
     }
     const evoMax = Math.max(...evo.map(e => Math.max(e.inc, e.exp)), 1);
