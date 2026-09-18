@@ -1830,22 +1830,79 @@ function App() {
           });
 
           // Detect if date moved to a different month
-          const newDate = clean.date || clean.dueDate;
+          const newDate = clean.dueDate || clean.date;
           const targetMonth = newDate ? newDate.substring(0, 7) : null;
           const movedMonth = targetMonth && targetMonth !== mKey;
 
-          const mo = orig.monthOverrides ? { ...orig.monthOverrides } : {};
+          let updated = p;
 
           if (movedMonth) {
-            // Mark current month as moved away
-            mo[mKey] = { ...mo[mKey], _movedTo: targetMonth };
-            // Add override in target month with new data
-            mo[targetMonth] = { ...mo[targetMonth], ...overrideFields, _movedFrom: mKey };
+            // Exclude from current month
+            const excl = orig.excludedMonths ? [...orig.excludedMonths] : [];
+            if (!excl.includes(mKey)) excl.push(mKey);
+            updated = updated.map(t => t.id === id ? { ...t, excludedMonths: excl } : t);
+            // Create standalone (non-recurring) transaction in target month
+            const newTx = {
+              ...orig,
+              ...overrideFields,
+              id: uid(),
+              isRecurring: false,
+              excludedMonths: undefined,
+              paidMonths: undefined,
+              monthOverrides: undefined,
+              endDate: undefined,
+              paid: clean.paid || false
+            };
+            updated = [...updated, newTx];
+            // Handle mirror: exclude + create standalone mirror
+            if (orig.type === "transfer" || orig.type === "transfer_in") {
+              const mirrorId = orig.type === "transfer" ? p.find(t => t._mirrorOf === id)?.id : orig._mirrorOf;
+              if (mirrorId) {
+                const mirrorOrig = p.find(t => t.id === mirrorId);
+                if (mirrorOrig) {
+                  const mexcl = mirrorOrig.excludedMonths ? [...mirrorOrig.excludedMonths] : [];
+                  if (!mexcl.includes(mKey)) mexcl.push(mKey);
+                  updated = updated.map(t => t.id === mirrorId ? { ...t, excludedMonths: mexcl } : t);
+                  const newMirror = {
+                    ...mirrorOrig,
+                    id: uid(),
+                    isRecurring: false,
+                    excludedMonths: undefined,
+                    paidMonths: undefined,
+                    monthOverrides: undefined,
+                    endDate: undefined,
+                    paid: clean.paid || false,
+                    date: overrideFields.date || mirrorOrig.date,
+                    dueDate: overrideFields.dueDate || mirrorOrig.dueDate,
+                    description: overrideFields.description || mirrorOrig.description,
+                    amount: overrideFields.amount !== undefined ? overrideFields.amount : mirrorOrig.amount,
+                    _mirrorOf: newTx.id
+                  };
+                  updated = [...updated, newMirror];
+                }
+              }
+            }
           } else {
+            // Same month - just save override
+            const mo = orig.monthOverrides ? { ...orig.monthOverrides } : {};
             mo[mKey] = { ...mo[mKey], ...overrideFields };
+            updated = updated.map(t => t.id === id ? { ...t, monthOverrides: mo } : t);
+            // Update mirror override
+            if (orig.type === "transfer" || orig.type === "transfer_in") {
+              const mirrorId = orig.type === "transfer" ? p.find(t => t._mirrorOf === id)?.id : orig._mirrorOf;
+              if (mirrorId) {
+                const mirrorOrig = p.find(t => t.id === mirrorId);
+                if (mirrorOrig) {
+                  const mof = {};
+                  ["description", "amount", "date", "dueDate", "category"].forEach(k => { if (overrideFields[k] !== undefined) mof[k] = overrideFields[k]; });
+                  const mmo = mirrorOrig.monthOverrides ? { ...mirrorOrig.monthOverrides } : {};
+                  mmo[mKey] = { ...mmo[mKey], ...mof };
+                  updated = updated.map(t => t.id === mirrorId ? { ...t, monthOverrides: mmo } : t);
+                }
+              }
+            }
           }
 
-          let updated = p.map(t => t.id === id ? { ...t, monthOverrides: mo } : t);
           if (clean.paid !== undefined) {
             const pk = movedMonth ? targetMonth : mKey;
             const pm = orig.paidMonths ? [...orig.paidMonths] : [];
@@ -1854,36 +1911,6 @@ function App() {
               if (idx >= 0) pm.splice(idx, 1);
             }
             updated = updated.map(t => t.id === id ? { ...t, paidMonths: pm } : t);
-          }
-          // Also update mirror
-          if (orig.type === "transfer" || orig.type === "transfer_in") {
-            const mirrorId = orig.type === "transfer" ? p.find(t => t._mirrorOf === id)?.id : orig._mirrorOf;
-            if (mirrorId) {
-              const mirrorOrig = p.find(t => t.id === mirrorId);
-              if (mirrorOrig) {
-                const mof = {};
-                if (overrideFields.description) mof.description = overrideFields.description;
-                if (overrideFields.amount !== undefined) mof.amount = overrideFields.amount;
-                if (overrideFields.date) mof.date = overrideFields.date;
-                if (overrideFields.dueDate !== undefined) mof.dueDate = overrideFields.dueDate;
-                if (overrideFields.category) mof.category = overrideFields.category;
-                const mmo = mirrorOrig.monthOverrides ? { ...mirrorOrig.monthOverrides } : {};
-                if (movedMonth) {
-                  mmo[mKey] = { ...mmo[mKey], _movedTo: targetMonth };
-                  mmo[targetMonth] = { ...mmo[targetMonth], ...mof, _movedFrom: mKey };
-                } else {
-                  mmo[mKey] = { ...mmo[mKey], ...mof };
-                }
-                updated = updated.map(t => t.id === mirrorId ? { ...t, monthOverrides: mmo } : t);
-                if (clean.paid !== undefined) {
-                  const pk = movedMonth ? targetMonth : mKey;
-                  const mpm = mirrorOrig.paidMonths ? [...mirrorOrig.paidMonths] : [];
-                  if (clean.paid && !mpm.includes(pk)) mpm.push(pk);
-                  else if (!clean.paid) { const idx = mpm.indexOf(pk); if (idx >= 0) mpm.splice(idx, 1); }
-                  updated = updated.map(t => t.id === mirrorId ? { ...t, paidMonths: mpm } : t);
-                }
-              }
-            }
           }
           return updated.sort((a, b) => a.date.localeCompare(b.date));
         }
@@ -4343,6 +4370,7 @@ function App() {
       },
       onClick: () => {
         if (isRV) setModal("delRecurring");else if (ei.groupId) setModal("delInstall");else {
+          if(!confirm("Excluir esta transação?"))return;
           deleteTx(ei.id);
           setModal(null);
           setEditItem(null);
