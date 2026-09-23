@@ -1596,6 +1596,7 @@ function App() {
 
   const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
   const [dashCatDetail, setDashCatDetail] = useState(null);
+  const [dashAcctFilter, setDashAcctFilter] = useState("all");
 
   const exportData = async () => {
     const pwd = prompt("Crie uma senha para proteger o backup:");
@@ -2996,7 +2997,10 @@ function App() {
         return [...prev, id];
       });
     };
-    const selectAll = () => setDashProfiles(profiles.map(p => p.id));
+    const selectAll = () => {
+      if (allSelected) { setDashProfiles([profiles[0]?.id].filter(Boolean)); }
+      else { setDashProfiles(profiles.map(p => p.id)); }
+    };
     const allSelected = dashProfiles.length === profiles.length;
     const dAccts = accounts.filter(a => dashProfiles.includes(a.profileId));
     const dAcctIds = dAccts.map(a => a.id);
@@ -3079,7 +3083,7 @@ function App() {
       const paid = g.filter(x => x.paid || (x.dueDate || x.date) < mk).length;
       const remaining = g.reduce((s, x) => s + (x.paid ? 0 : x.amount), 0);
       return { desc: first.description, instTotal: first.instTotal, paid, amount: first.instUnitAmount || first.amount, remaining, lastDate: last.dueDate || last.date };
-    }).sort((a, b) => b.remaining - a.remaining);
+    }).sort((a, b) => b.amount * b.instTotal - a.amount * a.instTotal);
     const installTotal = installList.reduce((s, g) => s + g.amount, 0);
 
     // Committed income
@@ -3135,7 +3139,7 @@ function App() {
           ),
           h("div", { style: { display: "flex", justifyContent: "space-between", borderTop: "1px solid " + C.cardBorder, paddingTop: 8 } },
             h("span", { style: { color: C.text, fontSize: 13, fontWeight: 600 } }, "Economia"),
-            h("span", { style: { color: mSaved >= 0 ? C.green : C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mSaved), " (", mPct, "%)")
+            h("span", { style: { color: Math.round(mSaved * 100) >= 0 ? C.green : C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mSaved), " (", mPct, "%)")
           ),
           pExpense > 0 && h("div", { style: { fontSize: 12, color: expDiff > 0 ? C.red : C.green, marginTop: 2 } },
             expDiff > 0 ? "↑ Gastou " + fmt(expDiff) + " a mais que " + MONTHS[prevM.m].toLowerCase() : expDiff < 0 ? "↓ Gastou " + fmt(Math.abs(expDiff)) + " a menos que " + MONTHS[prevM.m].toLowerCase() : "= Mesmo gasto que " + MONTHS[prevM.m].toLowerCase()
@@ -3155,10 +3159,14 @@ function App() {
           ))
         )),
         // Category detail popup
-        dashCatDetail && h(Modal, { open: true, onClose: () => setDashCatDetail(null), title: dashCatDetail },
-          h("div", { style: { display: "flex", flexDirection: "column", gap: 0, maxHeight: "60vh", overflowY: "auto" } },
+        dashCatDetail && h(Modal, { open: true, onClose: () => { setDashCatDetail(null); setDashAcctFilter("all"); }, title: dashCatDetail },
+          h("div", { style: { display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 } },
+            h("button", { style: { ...ST.toggleBtn, ...(dashAcctFilter === "all" ? ST.toggleActive : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter("all") }, "Todas"),
+            ...dAccts.map(a => h("button", { key: a.id, style: { ...ST.toggleBtn, ...(dashAcctFilter === a.id ? { background: a.color, color: "#fff", borderColor: a.color } : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter(a.id) }, a.type === "card" ? "💳 " : "🏦 ", a.name))
+          ),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 0, maxHeight: "50vh", overflowY: "auto" } },
             (() => {
-              const catTxs = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && (t.category || "Outros > Outros").split(" > ")[0] === dashCatDetail).sort((a, b) => b.amount - a.amount);
+              const catTxs = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && (t.category || "Outros > Outros").split(" > ")[0] === dashCatDetail && (dashAcctFilter === "all" || t.accountId === dashAcctFilter)).sort((a, b) => b.amount - a.amount);
               const catTotal = catTxs.reduce((s, t) => s + t.amount, 0);
               return [
                 h("div", { key: "total", style: { padding: "8px 0 12px", borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 700 } },
@@ -3204,12 +3212,17 @@ function App() {
           ),
           // Ring chart
           mIncome > 0 && h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginTop: 6 } },
-            h("svg", { width: 100, height: 100, viewBox: "0 0 36 36" },
-              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.inputBg, strokeWidth: 3 }),
-              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.amber, strokeWidth: 3, strokeDasharray: Math.min(recurTotal / mIncome * 100, 100) + " 100", strokeDashoffset: 25, strokeLinecap: "round" }),
-              h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.purple, strokeWidth: 3, strokeDasharray: Math.min(installTotal / mIncome * 100, 100) + " 100", strokeDashoffset: 25 - Math.min(recurTotal / mIncome * 100, 100), strokeLinecap: "round" }),
-              h("text", { x: 18, y: 19, textAnchor: "middle", dominantBaseline: "middle", fontSize: 7, fontWeight: 700, fill: C.text }, commitPct + "%")
-            ),
+            (() => {
+              const circ = 100;
+              const recurPct = Math.min(recurTotal / mIncome * circ, circ);
+              const installPct = Math.min(installTotal / mIncome * circ, circ - recurPct);
+              return h("svg", { width: 100, height: 100, viewBox: "0 0 36 36", style: { transform: "rotate(-90deg)" } },
+                h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.inputBg, strokeWidth: 3 }),
+                h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.amber, strokeWidth: 3, strokeDasharray: recurPct + " " + (circ - recurPct), strokeDashoffset: 0, strokeLinecap: "round" }),
+                h("circle", { cx: 18, cy: 18, r: 15.915, fill: "none", stroke: C.purple, strokeWidth: 3, strokeDasharray: installPct + " " + (circ - installPct), strokeDashoffset: -recurPct, strokeLinecap: "round" }),
+                h("text", { x: 18, y: 19, textAnchor: "middle", dominantBaseline: "middle", fontSize: 7, fontWeight: 700, fill: C.text, style: { transform: "rotate(90deg)", transformOrigin: "18px 18px" } }, commitPct + "%")
+              );
+            })(),
             h("div", { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 11 } },
               h("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, h("div", { style: { width: 10, height: 10, borderRadius: 3, background: C.amber } }), h("span", { style: { color: C.textSec } }, "Recorrentes")),
               h("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, h("div", { style: { width: 10, height: 10, borderRadius: 3, background: C.purple } }), h("span", { style: { color: C.textSec } }, "Parcelas")),
@@ -3634,7 +3647,7 @@ function App() {
         fontSize: 22,
         fontWeight: 700,
         fontFamily: "'JetBrains Mono',monospace",
-        color: net >= 0 ? C.green : C.red
+        color: Math.round(net * 100) >= 0 ? C.green : C.red
       }
     }, fmt(net))), /*#__PURE__*/h("div", {
       style: {
@@ -3649,7 +3662,7 @@ function App() {
       }
     }, "Contas: "), /*#__PURE__*/h("span", {
       style: {
-        color: tB > 0 ? C.green : tB < 0 ? C.red : C.amber
+        color: Math.round(tB * 100) > 0 ? C.green : Math.round(tB * 100) < 0 ? C.red : C.amber
       }
     }, fmt(tB))), /*#__PURE__*/h("span", null, /*#__PURE__*/h("span", {
       style: {
@@ -3712,7 +3725,7 @@ function App() {
         fontSize: 16,
         fontWeight: 700,
         fontFamily: "'JetBrains Mono',monospace",
-        color: bal >= 0 ? C.green : C.red
+        color: Math.round(bal * 100) >= 0 ? C.green : C.red
       }
     }, fmt(bal))), /*#__PURE__*/h("div", {
       style: {
