@@ -4019,6 +4019,9 @@ function App() {
       style: { background: "none", border: "1px solid " + C.cardBorder, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, color: allPaid ? C.amber : C.green, cursor: "pointer" },
       onClick: () => {
         const scrollY = window.scrollY;
+        document.body.style.position = 'fixed';
+        document.body.style.top = -scrollY + 'px';
+        document.body.style.width = '100%';
         setTxs(p => {
           let updated = [...p];
           monthTxs.forEach(t => {
@@ -4039,10 +4042,12 @@ function App() {
           });
           return updated;
         });
-        const r = () => window.scrollTo(0, scrollY);
-        const end = Date.now() + 2000;
-        const lock = () => { r(); if (Date.now() < end) requestAnimationFrame(lock); };
-        requestAnimationFrame(lock);
+        setTimeout(() => {
+          document.body.style.position = '';
+          document.body.style.top = '';
+          document.body.style.width = '';
+          window.scrollTo(0, scrollY);
+        }, 300);
       }
     }, allPaid ? "☐ Desmarcar todas" : "☑ Marcar todas como pagas"));
   })(), /*#__PURE__*/h("div", {
@@ -4123,11 +4128,17 @@ function App() {
           e.stopPropagation();
           e.preventDefault();
           const scrollY = window.scrollY;
+          // Freeze body to prevent scroll jump during DOM reorder
+          document.body.style.position = 'fixed';
+          document.body.style.top = -scrollY + 'px';
+          document.body.style.width = '100%';
           if (isRecurVirtual) toggleRecurPaid(t.id, mKey);else togglePaid(t.id);
-          const r = () => window.scrollTo(0, scrollY);
-          const end = Date.now() + 2000;
-          const lock = () => { r(); if (Date.now() < end) requestAnimationFrame(lock); };
-          requestAnimationFrame(lock);
+          setTimeout(() => {
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            window.scrollTo(0, scrollY);
+          }, 300);
         }
       }, isPaid && /*#__PURE__*/h(IcoCheck, null)), /*#__PURE__*/h("div", {
         style: {
