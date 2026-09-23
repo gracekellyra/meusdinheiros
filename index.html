@@ -3076,7 +3076,7 @@ function App() {
       if (!installGroups[t.groupId]) installGroups[t.groupId] = [];
       installGroups[t.groupId].push(t);
     });
-    const installList = Object.values(installGroups).map(g => {
+    const installList = Object.values(installGroups).filter(g => g.length > 1).map(g => {
       g.sort((a, b) => a.instNum - b.instNum);
       const first = g[0];
       const last = g[g.length - 1];
@@ -3124,37 +3124,60 @@ function App() {
         h("span", { style: ST.monthLbl }, MONTHS[month.m], " ", month.y),
         h("button", { style: ST.navBtn, onClick: () => navMonth(1) }, h(IcoChevR, null))
       ),
-      // Content
-      h("div", { style: { display: "flex", flexDirection: "column", gap: 12, padding: "0 16px" } },
+      // Account filter
+      dAccts.length > 1 && h("div", { style: { display: "flex", gap: 4, padding: "0 16px 8px", flexWrap: "wrap" } },
+        h("button", { style: { ...ST.toggleBtn, ...(dashAcctFilter === "all" ? ST.toggleActive : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter("all") }, "Todas"),
+        ...dAccts.map(a => h("button", { key: a.id, style: { ...ST.toggleBtn, ...(dashAcctFilter === a.id ? { background: a.color, color: "#fff", borderColor: a.color } : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter(a.id) }, a.type === "card" ? "💳 " : "🏦 ", a.name))
+      ),
+      (() => {
+      // Apply account filter to all data
+      const fTxs = dashAcctFilter === "all" ? mTxs : mTxs.filter(t => t.accountId === dashAcctFilter);
+      const fIncome = fTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+      const fExpense = fTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+      const fSaved = fIncome - fExpense;
+      const fPct = fIncome > 0 ? Math.round((fSaved / fIncome) * 100) : 0;
+      const fpTxs = dashAcctFilter === "all" ? pTxs : pTxs.filter(t => t.accountId === dashAcctFilter);
+      const fpExpense = fpTxs.filter(t => t.type === "expense" || t.type === "transfer").reduce((s, t) => s + t.amount, 0);
+      const fExpDiff = fExpense - fpExpense;
+      // Category breakdown filtered
+      const fCatMap = {};
+      fTxs.filter(t => t.type === "expense" || t.type === "transfer").forEach(t => {
+        const cat = (t.category || "Outros > Outros").split(" > ")[0];
+        fCatMap[cat] = (fCatMap[cat] || 0) + t.amount;
+      });
+      const fCatList = Object.entries(fCatMap).sort((a, b) => b[1] - a[1]);
+      const fCatMax = fCatList.length > 0 ? fCatList[0][1] : 1;
+      const fTop5 = [...fTxs].filter(t => t.type === "expense" || t.type === "transfer").sort((a, b) => b.amount - a.amount).slice(0, 5);
+      return h("div", { style: { display: "flex", flexDirection: "column", gap: 12, padding: "0 16px" } },
 
         // 1. Resumo
         card("Resumo do Mês", h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
           h("div", { style: { display: "flex", justifyContent: "space-between" } },
             h("span", { style: { color: C.textSec, fontSize: 13 } }, "Entradas"),
-            h("span", { style: { color: C.green, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mIncome))
+            h("span", { style: { color: C.green, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(fIncome))
           ),
           h("div", { style: { display: "flex", justifyContent: "space-between" } },
             h("span", { style: { color: C.textSec, fontSize: 13 } }, "Saídas"),
-            h("span", { style: { color: C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mExpense))
+            h("span", { style: { color: C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(fExpense))
           ),
           h("div", { style: { display: "flex", justifyContent: "space-between", borderTop: "1px solid " + C.cardBorder, paddingTop: 8 } },
             h("span", { style: { color: C.text, fontSize: 13, fontWeight: 600 } }, "Economia"),
-            h("span", { style: { color: Math.round(mSaved * 100) >= 0 ? C.green : C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(mSaved), " (", mPct, "%)")
+            h("span", { style: { color: Math.round(fSaved * 100) >= 0 ? C.green : C.red, fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" } }, fmt(fSaved), " (", fPct, "%)")
           ),
-          pExpense > 0 && h("div", { style: { fontSize: 12, color: expDiff > 0 ? C.red : C.green, marginTop: 2 } },
-            expDiff > 0 ? "↑ Gastou " + fmt(expDiff) + " a mais que " + MONTHS[prevM.m].toLowerCase() : expDiff < 0 ? "↓ Gastou " + fmt(Math.abs(expDiff)) + " a menos que " + MONTHS[prevM.m].toLowerCase() : "= Mesmo gasto que " + MONTHS[prevM.m].toLowerCase()
+          fpExpense > 0 && h("div", { style: { fontSize: 12, color: fExpDiff > 0 ? C.red : C.green, marginTop: 2 } },
+            fExpDiff > 0 ? "↑ Gastou " + fmt(fExpDiff) + " a mais que " + MONTHS[prevM.m].toLowerCase() : fExpDiff < 0 ? "↓ Gastou " + fmt(Math.abs(fExpDiff)) + " a menos que " + MONTHS[prevM.m].toLowerCase() : "= Mesmo gasto que " + MONTHS[prevM.m].toLowerCase()
           )
         )),
 
         // 2. Gastos por Categoria
-        card("Gastos por Categoria", catList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos neste mês") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-          ...catList.map(([cat, val]) => h("div", { key: cat, style: { cursor: "pointer" }, onClick: () => setDashCatDetail(cat) },
+        card("Gastos por Categoria", fCatList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos neste mês") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+          ...fCatList.map(([cat, val]) => h("div", { key: cat, style: { cursor: "pointer" }, onClick: () => setDashCatDetail(cat) },
             h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 } },
               h("span", { style: { color: C.text, fontWeight: 500 } }, cat, " ▸"),
-              h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace" } }, fmt(val), " (", Math.round(val / mExpense * 100), "%)")
+              h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace" } }, fmt(val), " (", fExpense > 0 ? Math.round(val / fExpense * 100) : 0, "%)")
             ),
             h("div", { style: { height: 8, borderRadius: 4, background: C.inputBg, overflow: "hidden" } },
-              h("div", { style: { height: "100%", borderRadius: 4, background: C.blue, width: Math.round(val / catMax * 100) + "%" } })
+              h("div", { style: { height: "100%", borderRadius: 4, background: C.blue, width: Math.round(val / fCatMax * 100) + "%" } })
             )
           ))
         )),
@@ -3186,8 +3209,8 @@ function App() {
         ),
 
         // 3. Top 5
-        card("Top 5 Maiores Gastos", top5.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-          ...top5.map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 } },
+        card("Top 5 Maiores Gastos", fTop5.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          ...fTop5.map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 } },
             h("div", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 } },
               h("span", { style: { background: C.red, color: "#fff", borderRadius: 6, width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 } }, i + 1),
               h("span", { style: { color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, t.description)
@@ -3272,7 +3295,8 @@ function App() {
             h("div", { style: { display: "flex", alignItems: "center", gap: 4 } }, h("div", { style: { width: 10, height: 10, borderRadius: 2, background: C.red, opacity: 0.8 } }), h("span", { style: { color: C.textSec } }, "Saídas"))
           )
         ))
-      )
+      );
+      })()
     );
   }
 
