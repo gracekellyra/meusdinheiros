@@ -3066,11 +3066,12 @@ function App() {
 
     // Recurring debts (active) - exclude internal transfers
     const recur = dTxs.filter(t => t.isRecurring && (t.type === "expense" || t.type === "transfer") && !t.endDate);
-    const recurTotal = recur.reduce((s, t) => s + t.amount, 0);
+    const recurFiltered = dashAcctFilter === "all" ? recur : recur.filter(t => t.accountId === dashAcctFilter);
+    const recurTotal = recurFiltered.reduce((s, t) => s + t.amount, 0);
 
     // Installments (active)
     const now = new Date();
-    const installs = dTxs.filter(t => t.groupId && t.instNum && t.instTotal && (t.type === "expense" || t.type === "transfer") && !t._mirrorOf);
+    const installs = dTxs.filter(t => t.groupId && t.instNum && t.instTotal && (t.type === "expense" || t.type === "transfer") && !t._mirrorOf && (dashAcctFilter === "all" || t.accountId === dashAcctFilter));
     const installGroups = {};
     installs.forEach(t => {
       if (!installGroups[t.groupId]) installGroups[t.groupId] = [];
@@ -3098,8 +3099,9 @@ function App() {
       let ey = month.y;
       while (em < 0) { em += 12; ey--; }
       const eTxs = getMonthAll(dTxs, { y: ey, m: em });
-      const eInc = eTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-      const eExp = eTxs.filter(t => (t.type === "expense" || t.type === "transfer")).reduce((s, t) => s + t.amount, 0);
+      const efTxs = dashAcctFilter === "all" ? eTxs : eTxs.filter(t => t.accountId === dashAcctFilter);
+      const eInc = efTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+      const eExp = efTxs.filter(t => (t.type === "expense" || t.type === "transfer")).reduce((s, t) => s + t.amount, 0);
       evo.push({ m: MONTHS[em].substring(0, 3), inc: eInc, exp: eExp });
     }
     const evoMax = Math.max(...evo.map(e => Math.max(e.inc, e.exp)), 1);
@@ -3182,7 +3184,7 @@ function App() {
           ))
         )),
         // Category detail popup
-        dashCatDetail && h(Modal, { open: true, onClose: () => { setDashCatDetail(null); setDashAcctFilter("all"); }, title: dashCatDetail },
+        dashCatDetail && h(Modal, { open: true, onClose: () => { setDashCatDetail(null); }, title: dashCatDetail },
           h("div", { style: { display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 } },
             h("button", { style: { ...ST.toggleBtn, ...(dashAcctFilter === "all" ? ST.toggleActive : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter("all") }, "Todas"),
             ...dAccts.map(a => h("button", { key: a.id, style: { ...ST.toggleBtn, ...(dashAcctFilter === a.id ? { background: a.color, color: "#fff", borderColor: a.color } : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter(a.id) }, a.type === "card" ? "💳 " : "🏦 ", a.name))
@@ -3255,11 +3257,15 @@ function App() {
         )),
 
         // 5. Recorrentes
-        card("Despesas Recorrentes (" + recur.length + ")", recur.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Nenhuma despesa recorrente") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-          ...recur.sort((a, b) => b.amount - a.amount).map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: i < recur.length - 1 ? "1px solid " + C.cardBorder : "none" } },
+        card("Despesas Recorrentes (" + recurFiltered.length + ")", recurFiltered.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Nenhuma despesa recorrente") : h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          ...recurFiltered.sort((a, b) => b.amount - a.amount).map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: "1px solid " + C.cardBorder } },
             h("span", { style: { color: C.text, flex: 1 } }, t.description),
             h("span", { style: { color: C.amber, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" } }, fmt(t.amount), "/mês")
-          ))
+          )),
+          h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0 0", fontWeight: 700 } },
+            h("span", { style: { color: C.text } }, "Total mensal"),
+            h("span", { style: { color: C.amber, fontFamily: "'JetBrains Mono',monospace" } }, fmt(recurTotal), "/mês")
+          )
         )),
 
         // 6. Parceladas
