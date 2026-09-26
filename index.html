@@ -3704,7 +3704,7 @@ function App() {
       style: {
         color: tC > 0 ? C.red : C.green
       }
-    }, "-", fmt(tC)))));
+    }, tC > 0 ? "-" : "", fmt(tC)))));
   })(), /*#__PURE__*/h("div", {
     style: ST.sec
   }, /*#__PURE__*/h("div", {
