@@ -816,6 +816,79 @@ function SumCard({
     }
   }, value));
 }
+function DateInput({ value, onChange, style, className }) {
+  const pickerRef = useRef(null);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  
+  const formatted = value ? value.split("-").reverse().join("/") : "";
+  
+  const startEdit = () => {
+    setText(formatted);
+    setEditing(true);
+  };
+  
+  const finishEdit = () => {
+    setEditing(false);
+    // Parse dd/mm/yyyy or ddmmyyyy
+    const clean = text.replace(/[^\d]/g, "");
+    if (clean.length >= 8) {
+      const d = clean.substring(0, 2);
+      const m = clean.substring(2, 4);
+      const y = clean.substring(4, 8);
+      if (parseInt(d) > 0 && parseInt(d) <= 31 && parseInt(m) > 0 && parseInt(m) <= 12 && parseInt(y) > 2000) {
+        onChange(y + "-" + m + "-" + d);
+        return;
+      }
+    }
+    // Try other formats
+    const parts = text.split("/");
+    if (parts.length === 3) {
+      const [d, m, y] = parts;
+      if (d && m && y && y.length === 4) {
+        onChange(y.padStart(4, "0") + "-" + m.padStart(2, "0") + "-" + d.padStart(2, "0"));
+        return;
+      }
+    }
+  };
+  
+  const openPicker = () => {
+    if (pickerRef.current) {
+      pickerRef.current.showPicker ? pickerRef.current.showPicker() : pickerRef.current.click();
+    }
+  };
+  
+  return h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+    editing ? h("input", {
+      type: "text",
+      style: { ...style, flex: 1 },
+      className: className,
+      value: text,
+      placeholder: "dd/mm/aaaa",
+      inputMode: "numeric",
+      autoFocus: true,
+      onChange: e => setText(e.target.value),
+      onBlur: finishEdit,
+      onKeyDown: e => { if (e.key === "Enter") { e.target.blur(); } }
+    }) : h("div", {
+      style: { ...style, flex: 1, cursor: "pointer", display: "flex", alignItems: "center" },
+      className: className,
+      onClick: startEdit
+    }, h("span", { style: { color: value ? C.text : C.textTer } }, formatted || "dd/mm/aaaa")),
+    h("input", {
+      ref: pickerRef,
+      type: "date",
+      style: { position: "absolute", opacity: 0, width: 0, height: 0, overflow: "hidden" },
+      value: value || "",
+      onChange: e => onChange(e.target.value)
+    }),
+    h("button", {
+      type: "button",
+      style: { background: C.inputBg, border: "1px solid " + C.cardBorder, borderRadius: 8, padding: "8px 10px", cursor: "pointer", fontSize: 16, color: C.textSec, flexShrink: 0 },
+      onClick: openPicker
+    }, "\uD83D\uDCC5")
+  );
+}
 function CatSelect({
   value,
   onChange,
@@ -5192,11 +5265,10 @@ function TxForm({
     return Object.entries(grouped).map(([prof, accts]) => h("optgroup", {key:prof, label:prof}, accts.map(a => h("option",{key:a.id,value:a.id}, a.name))));
   })())), /*#__PURE__*/h(Field, {
     label: "Data"
-  }, /*#__PURE__*/h("input", {
-    type: "date",
+  }, /*#__PURE__*/h(DateInput, {
     style: ST.input,
     value: form.date,
-    onChange: e => set("date", e.target.value)
+    onChange: v => set("date", v)
   })), /*#__PURE__*/h(Field, {
     label: "Descri\xE7\xE3o",
     error: errs.description
@@ -5227,12 +5299,11 @@ function TxForm({
   })), !isBank && /*#__PURE__*/h(Field, {
     label: "Data de Vencimento",
     error: errs.dueDate
-  }, /*#__PURE__*/h("input", {
-    type: "date",
+  }, /*#__PURE__*/h(DateInput, {
     style: ST.input,
     className: errs.dueDate ? "field-error" : "",
     value: form.dueDate,
-    onChange: e => set("dueDate", e.target.value)
+    onChange: v => set("dueDate", v)
   })), !initial && /*#__PURE__*/h("div", {
     style: {
       display: "flex",
