@@ -25,6 +25,14 @@ input:focus,select:focus{outline:none;border-color:#6366f1 !important}
 .field-error{border-color:#dc2626 !important;box-shadow:0 0 0 1px #dc2626}
 .suggestions-list{position:absolute;top:100%;left:0;right:0;border-radius:0 0 10px 10px;max-height:150px;overflow-y:auto;z-index:20}
 .suggestions-list button{display:block;width:100%;padding:10px 14px;background:none;border:none;text-align:left;font-size:14px;cursor:pointer}
+@keyframes pageFlipOut{0%{transform:perspective(1200px) rotateY(0);opacity:1}100%{transform:perspective(1200px) rotateY(-90deg);opacity:0}}
+@keyframes pageFlipIn{0%{transform:perspective(1200px) rotateY(90deg);opacity:0}100%{transform:perspective(1200px) rotateY(0);opacity:1}}
+@keyframes pageFlipOutR{0%{transform:perspective(1200px) rotateY(0);opacity:1}100%{transform:perspective(1200px) rotateY(90deg);opacity:0}}
+@keyframes pageFlipInR{0%{transform:perspective(1200px) rotateY(-90deg);opacity:0}100%{transform:perspective(1200px) rotateY(0);opacity:1}}
+.flip-next{animation:pageFlipOut .18s ease-in forwards}
+.flip-next-in{animation:pageFlipIn .18s ease-out forwards}
+.flip-prev{animation:pageFlipOutR .18s ease-in forwards}
+.flip-prev-in{animation:pageFlipInR .18s ease-out forwards}
 </style>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(reg=>{reg.update();reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw.addEventListener('statechange',()=>{if(nw.state==='activated')window.location.reload()})})}).catch(()=>{})})}
@@ -1523,6 +1531,9 @@ function App() {
 
   // Balance mode: "full" = end of month, "today" = up to today
   const [balMode, setBalMode] = useState("full");
+  const [flipDir, setFlipDir] = useState(0);
+  const flipRef = useRef(null);
+  const flipTimer = useRef(null);
   const now = new Date();
   const isCurrentMonth = month.m === now.getMonth() && month.y === now.getFullYear();
   const todayKey = td();
@@ -1571,21 +1582,25 @@ function App() {
     const pr = (profiles || []).find(p => p.id === acct.profileId);
     return pr ? pr.name : "";
   };
-  const navMonth = d => setMonth(p => {
-    let m = p.m + d,
-      y = p.y;
-    if (m < 0) {
-      m = 11;
-      y--;
-    } else if (m > 11) {
-      m = 0;
-      y++;
-    }
-    return {
-      m,
-      y
-    };
-  });
+  const navMonth = d => {
+    if (flipTimer.current) return;
+    setFlipDir(d);
+    flipTimer.current = setTimeout(() => {
+      setMonth(p => {
+        let m = p.m + d, y = p.y;
+        if (m < 0) { m = 11; y--; }
+        else if (m > 11) { m = 0; y++; }
+        return { m, y };
+      });
+      setFlipDir(prev => prev ? prev + (prev > 0 ? 10 : -10) : 0);
+      flipTimer.current = setTimeout(() => {
+        setFlipDir(0);
+        flipTimer.current = null;
+      }, 180);
+    }, 180);
+  };
+
+  const flipClass = flipDir === 1 ? "flip-next" : flipDir === -1 ? "flip-prev" : flipDir === 11 ? "flip-next-in" : flipDir === -11 ? "flip-prev-in" : "";
 
   /* Profile */
   const addProfile = d => {
@@ -3183,7 +3198,7 @@ function App() {
 
     const card = (title, children) => h("div", { style: { background: C.card, borderRadius: 14, padding: "14px 16px", border: "1px solid " + C.cardBorder } }, h("h3", { style: { fontSize: 13, fontWeight: 700, color: C.textSec, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 } }, title), children);
 
-    return h("div", { style: { ...ST.app, paddingBottom: 100 } },
+    return h("div", { style: { ...ST.app, paddingBottom: 100, transformOrigin: flipDir > 0 ? "right center" : "left center" }, className: flipClass },
       // Header
       h("header", { style: ST.header },
         h("button", { style: ST.navBtn, onClick: popView }, h(IcoBack, null)),
@@ -3383,7 +3398,8 @@ function App() {
 
   /* ═══ HOME ═══ */
   if (view === "home") return /*#__PURE__*/h("div", {
-    style: ST.app,
+    style: {...ST.app, transformOrigin: flipDir > 0 ? "right center" : "left center"},
+    className: flipClass,
     onTouchStart: handleTouchStart,
     onTouchEnd: handleTouchEnd
   }, /*#__PURE__*/h("header", {
@@ -3982,7 +3998,8 @@ function App() {
   const allMoveTargets = moveTargets; // same list, now used in detail popup for all tx types including recurring
 
   return /*#__PURE__*/h("div", {
-    style: ST.app,
+    style: {...ST.app, transformOrigin: flipDir > 0 ? "right center" : "left center"},
+    className: flipClass,
     onTouchStart: handleTouchStart,
     onTouchEnd: handleTouchEnd
   }, /*#__PURE__*/h("div", {
