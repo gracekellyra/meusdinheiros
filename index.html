@@ -25,14 +25,10 @@ input:focus,select:focus{outline:none;border-color:#6366f1 !important}
 .field-error{border-color:#dc2626 !important;box-shadow:0 0 0 1px #dc2626}
 .suggestions-list{position:absolute;top:100%;left:0;right:0;border-radius:0 0 10px 10px;max-height:150px;overflow-y:auto;z-index:20}
 .suggestions-list button{display:block;width:100%;padding:10px 14px;background:none;border:none;text-align:left;font-size:14px;cursor:pointer}
-@keyframes pageFwdOut{0%{transform:perspective(1800px) rotateY(0);filter:brightness(1)}50%{filter:brightness(0.92)}100%{transform:perspective(1800px) rotateY(-75deg);filter:brightness(0.8);opacity:0}}
-@keyframes pageFwdIn{0%{transform:perspective(1800px) rotateY(55deg);filter:brightness(0.8);opacity:0}50%{filter:brightness(0.92)}100%{transform:perspective(1800px) rotateY(0);filter:brightness(1);opacity:1}}
-@keyframes pageBwdOut{0%{transform:perspective(1800px) rotateY(0);filter:brightness(1)}50%{filter:brightness(0.92)}100%{transform:perspective(1800px) rotateY(75deg);filter:brightness(0.8);opacity:0}}
-@keyframes pageBwdIn{0%{transform:perspective(1800px) rotateY(-55deg);filter:brightness(0.8);opacity:0}50%{filter:brightness(0.92)}100%{transform:perspective(1800px) rotateY(0);filter:brightness(1);opacity:1}}
-.flip-next{animation:pageFwdOut .22s ease-in forwards;transform-origin:left center}
-.flip-next-in{animation:pageFwdIn .22s ease-out forwards;transform-origin:left center}
-.flip-prev{animation:pageBwdOut .22s ease-in forwards;transform-origin:right center}
-.flip-prev-in{animation:pageBwdIn .22s ease-out forwards;transform-origin:right center}
+@keyframes pageFwdOut{0%{transform:perspective(1800px) rotateY(0);filter:brightness(1);box-shadow:none}40%{filter:brightness(0.93);box-shadow:-8px 0 20px rgba(0,0,0,0.15)}100%{transform:perspective(1800px) rotateY(-85deg);filter:brightness(0.75);box-shadow:-2px 0 6px rgba(0,0,0,0.1);opacity:0}}
+@keyframes pageBwdOut{0%{transform:perspective(1800px) rotateY(0);filter:brightness(1);box-shadow:none}40%{filter:brightness(0.93);box-shadow:8px 0 20px rgba(0,0,0,0.15)}100%{transform:perspective(1800px) rotateY(85deg);filter:brightness(0.75);box-shadow:2px 0 6px rgba(0,0,0,0.1);opacity:0}}
+.flip-next{animation:pageFwdOut .28s ease-in forwards;transform-origin:left center}
+.flip-prev{animation:pageBwdOut .28s ease-in forwards;transform-origin:right center}
 </style>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(reg=>{reg.update();reg.addEventListener('updatefound',()=>{const nw=reg.installing;nw.addEventListener('statechange',()=>{if(nw.state==='activated')window.location.reload()})})}).catch(()=>{})})}
@@ -1586,21 +1582,18 @@ function App() {
     if (flipTimer.current) return;
     setFlipDir(d);
     flipTimer.current = setTimeout(() => {
+      setFlipDir(0);
       setMonth(p => {
         let m = p.m + d, y = p.y;
         if (m < 0) { m = 11; y--; }
         else if (m > 11) { m = 0; y++; }
         return { m, y };
       });
-      setFlipDir(prev => prev ? prev + (prev > 0 ? 10 : -10) : 0);
-      flipTimer.current = setTimeout(() => {
-        setFlipDir(0);
-        flipTimer.current = null;
-      }, 230);
-    }, 230);
+      flipTimer.current = null;
+    }, 280);
   };
 
-  const flipClass = flipDir === 1 ? "flip-next" : flipDir === -1 ? "flip-prev" : flipDir === 11 ? "flip-next-in" : flipDir === -11 ? "flip-prev-in" : "";
+  const flipClass = flipDir === 1 ? "flip-next" : flipDir === -1 ? "flip-prev" : "";
 
   /* Profile */
   const addProfile = d => {
