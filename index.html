@@ -1679,6 +1679,7 @@ function App() {
 
   const [dashProfiles, setDashProfiles] = useState(() => profiles.map(p => p.id));
   const [dashCatDetail, setDashCatDetail] = useState(null);
+  const [dashSubOpen, setDashSubOpen] = useState(null);
   const [dashAcctFilter, setDashAcctFilter] = useState([]);
 
   const exportData = async () => {
@@ -3256,7 +3257,7 @@ function App() {
 
         // 2. Gastos por Categoria
         card("Gastos por Categoria", fCatList.length === 0 ? h("p", { style: { color: C.textSec, fontSize: 13 } }, "Sem gastos neste mês") : h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-          ...fCatList.map(([cat, val]) => h("div", { key: cat, style: { cursor: "pointer" }, onClick: () => setDashCatDetail(cat) },
+          ...fCatList.map(([cat, val]) => h("div", { key: cat, style: { cursor: "pointer" }, onClick: () => { setDashCatDetail(cat); setDashSubOpen(null); } },
             h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 } },
               h("span", { style: { color: C.text, fontWeight: 500 } }, cat, " ▸"),
               h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace" } }, fmt(val), " (", fExpense > 0 ? Math.round(val / fExpense * 100) : 0, "%)")
@@ -3267,27 +3268,82 @@ function App() {
           ))
         )),
         // Category detail popup
-        dashCatDetail && h(Modal, { open: true, onClose: () => { setDashCatDetail(null); }, title: dashCatDetail },
+        dashCatDetail && h(Modal, { open: true, onClose: () => { setDashCatDetail(null); setDashSubOpen(null); }, title: dashCatDetail },
           h("div", { style: { display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 } },
             h("button", { style: { ...ST.toggleBtn, ...(dashAcctFilter.length === 0 ? ST.toggleActive : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter([]) }, "Todas"),
             ...dAccts.map(a => h("button", { key: a.id, style: { ...ST.toggleBtn, ...(dashAcctFilter.includes(a.id) ? { background: a.color, color: "#fff", borderColor: a.color } : {}), fontSize: 10, padding: "3px 8px" }, onClick: () => setDashAcctFilter(p => p.includes(a.id) ? (p.length === 1 ? [] : p.filter(x => x !== a.id)) : [...p, a.id]) }, a.type === "card" ? "💳 " : "🏦 ", a.name))
           ),
-          h("div", { style: { display: "flex", flexDirection: "column", gap: 0, maxHeight: "50vh", overflowY: "auto" } },
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 0, maxHeight: "60vh", overflowY: "auto" } },
             (() => {
               const catTxs = mTxs.filter(t => (t.type === "expense" || t.type === "transfer") && (t.category || "Outros > Outros").split(" > ")[0] === dashCatDetail && (dashAcctFilter.length === 0 || dashAcctFilter.includes(t.accountId))).sort((a, b) => b.amount - a.amount);
               const catTotal = catTxs.reduce((s, t) => s + t.amount, 0);
+
+              // Agrupa por subcategoria
+              const subMap = {};
+              catTxs.forEach(t => {
+                const sub = (t.category || "").split(" > ")[1] || "Outros";
+                if (!subMap[sub]) subMap[sub] = { total: 0, items: [] };
+                subMap[sub].total += t.amount;
+                subMap[sub].items.push(t);
+              });
+              const subList = Object.entries(subMap).sort((a, b) => b[1].total - a[1].total);
+              const subMax = subList.length > 0 ? subList[0][1].total : 1;
+
+              if (catTxs.length === 0) return h("p", { style: { color: C.textSec, fontSize: 13, padding: "12px 0" } }, "Sem gastos nesta categoria");
+
               return [
+                // Total da categoria
                 h("div", { key: "total", style: { padding: "8px 0 12px", borderBottom: "1px solid " + C.cardBorder, display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 700 } },
                   h("span", { style: { color: C.text } }, catTxs.length, " transaç", catTxs.length === 1 ? "ão" : "ões"),
                   h("span", { style: { color: C.red, fontFamily: "'JetBrains Mono',monospace" } }, fmt(catTotal))
                 ),
-                ...catTxs.map((t, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < catTxs.length - 1 ? "1px solid " + C.cardBorder : "none" } },
-                  h("div", { style: { flex: 1, minWidth: 0 } },
-                    h("div", { style: { fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, t.description),
-                    h("div", { style: { fontSize: 11, color: C.textSec } }, (t.category || "").split(" > ")[1] || "", " · ", (t.date || "").split("-").reverse().join("/"))
-                  ),
-                  h("span", { style: { color: C.red, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", marginLeft: 8, flexShrink: 0 } }, fmt(t.amount))
-                ))
+
+                // Uma linha por subcategoria (clicável)
+                ...subList.map(([sub, g]) => {
+                  const open = dashSubOpen === sub;
+                  const pct = catTotal > 0 ? Math.round(g.total / catTotal * 100) : 0;
+                  return h("div", { key: sub, style: { borderBottom: "1px solid " + C.cardBorder } },
+                    h("button", {
+                      style: { display: "block", width: "100%", background: "none", border: "none", padding: "12px 0", cursor: "pointer", textAlign: "left" },
+                      onClick: () => setDashSubOpen(open ? null : sub)
+                    },
+                      h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, marginBottom: 5 } },
+                        h("span", { style: { color: C.text, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 } },
+                          h("span", { style: { color: C.textSec, fontSize: 10, display: "inline-block", width: 10, transition: "transform .2s", transform: open ? "rotate(90deg)" : "none" } }, "▶"),
+                          h("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, sub),
+                          h("span", { style: ST.badge }, g.items.length)
+                        ),
+                        h("span", { style: { color: C.textSec, fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, marginLeft: 8 } },
+                          h("span", { style: { color: C.red, fontWeight: 700 } }, fmt(g.total)), " (", pct, "%)"
+                        )
+                      ),
+                      h("div", { style: { height: 6, borderRadius: 3, background: C.inputBg, overflow: "hidden", marginLeft: 16 } },
+                        h("div", { style: { height: "100%", borderRadius: 3, background: C.blue, width: Math.round(g.total / subMax * 100) + "%" } })
+                      )
+                    ),
+
+                    // Gastos separados da subcategoria
+                    open && h("div", { style: { background: C.inputBg, borderRadius: 10, padding: "2px 12px", margin: "0 0 12px 16px" } },
+                      ...g.items.map((t, i) => {
+                        const acct = accounts.find(a => a.id === t.accountId);
+                        return h("div", { key: t.id + "-" + i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < g.items.length - 1 ? "1px solid " + C.cardBorder : "none" } },
+                          h("div", { style: { flex: 1, minWidth: 0 } },
+                            h("div", { style: { fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                              t.description,
+                              t.instNum ? h("span", { style: { ...ST.badge, marginLeft: 5 } }, t.instNum, "/", t.instTotal) : null,
+                              t.isRecurring ? h("span", { style: { ...ST.badge, marginLeft: 5, background: C.purpleBg2, color: C.purple } }, "Rec") : null
+                            ),
+                            h("div", { style: { fontSize: 11, color: C.textSec, marginTop: 2 } },
+                              (t.date || "").split("-").reverse().join("/"),
+                              acct ? h("span", { style: { color: acct.color } }, " · ", acct.name) : null
+                            )
+                          ),
+                          h("span", { style: { color: C.red, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", marginLeft: 8, flexShrink: 0, fontSize: 13 } }, fmt(t.amount))
+                        );
+                      })
+                    )
+                  );
+                })
               ];
             })()
           )
