@@ -391,6 +391,16 @@ const td = () => {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 };
+/* Vencimento no cartão para uma data de compra (próximo vencimento; recorrentes ficam no mesmo mês) */
+const cardDueFor = (dateStr, acct, sameMonth) => {
+  const day = parseInt(acct && acct.dueDay) || 0;
+  if (!day || !dateStr) return dateStr || "";
+  const d = new Date(dateStr + "T12:00:00");
+  let m = d.getMonth(), y = d.getFullYear();
+  if (!sameMonth && d.getDate() > day) { m++; if (m > 11) { m = 0; y++; } }
+  const last = new Date(y, m + 1, 0).getDate();
+  return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(Math.min(day, last)).padStart(2, "0");
+};
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const STORE_KEY = "financas_app_data";
 const DD = {
@@ -2221,6 +2231,20 @@ function App() {
     setEditItem(null);
   }, [mKey, month]);
   const moveTxToAccount = useCallback((id, nid, recurScope) => {
+    const tgt = accounts.find(a => a.id === nid);
+    // Ajusta os campos quando a transação muda de conta para cartão (ou vice-versa)
+    const re = x => {
+      const src = accounts.find(a => a.id === x.accountId);
+      const patch = { accountId: nid };
+      if (!src || !tgt || src.type === tgt.type) return patch;
+      if (tgt.type === "card") {
+        patch.dueDate = cardDueFor(x.date, tgt, x.isRecurring);
+      } else {
+        if (x.groupId && x.dueDate) patch.date = x.dueDate; // parcelas: cada uma cai no mês do seu vencimento
+        patch.dueDate = "";
+      }
+      return patch;
+    };
     setTxs(p => {
       const t = p.find(x => x.id === id);
       if (!t) return p;
@@ -2253,6 +2277,7 @@ function App() {
             paidMonths: undefined,
             monthOverrides: undefined
           };
+          Object.assign(newTx, re({ ...newTx, accountId: t.accountId }));
           let u = p.map(x => x.id === id ? {
             ...x,
             endDate: endStr
@@ -2280,7 +2305,7 @@ function App() {
       if (t.groupId) {
         if (recurScope === "instThis") {
           // Move only this parcel
-          let u = p.map(x => x.id === id ? { ...x, accountId: nid } : x);
+          let u = p.map(x => x.id === id ? { ...x, ...re(x) } : x);
           const mirror = p.find(x => x._mirrorOf === id);
           if (mirror) u = u.map(x => x.id === mirror.id ? { ...x, fromAccountId: nid } : x);
           return u;
@@ -2288,7 +2313,7 @@ function App() {
         if (recurScope === "instForward") {
           // Move this and future parcels
           let u = p.map(x => {
-            if (x.groupId === t.groupId && x.instNum >= t.instNum && !x._mirrorOf && x.type !== "transfer_in") return { ...x, accountId: nid };
+            if (x.groupId === t.groupId && x.instNum >= t.instNum && !x._mirrorOf && x.type !== "transfer_in") return { ...x, ...re(x) };
             return x;
           });
           const fwdIds = p.filter(x => x.groupId === t.groupId && x.instNum >= t.instNum && !x._mirrorOf && x.type !== "transfer_in").map(x => x.id);
@@ -2301,7 +2326,7 @@ function App() {
         }
         // "instAll" or no scope: move all parcels
         let u = p.map(x => {
-          if (x.groupId === t.groupId && !x._mirrorOf && x.type !== "transfer_in") return { ...x, accountId: nid };
+          if (x.groupId === t.groupId && !x._mirrorOf && x.type !== "transfer_in") return { ...x, ...re(x) };
           return x;
         });
         const groupIds = p.filter(x => x.groupId === t.groupId && !x._mirrorOf && x.type !== "transfer_in").map(x => x.id);
@@ -2314,7 +2339,7 @@ function App() {
       }
       let u = p.map(x => x.id === id ? {
         ...x,
-        accountId: nid
+        ...re(x)
       } : x);
       if (t.type === "transfer") u = u.map(x => x._mirrorOf === id ? {
         ...x,
@@ -2328,7 +2353,7 @@ function App() {
     });
     setModal(null);
     setEditItem(null);
-  }, [mKey, month]);
+  }, [mKey, month, accounts]);
   const togglePaid = useCallback(id => {
     setTxs(p => {
       const t = p.find(x => x.id === id);
@@ -4039,7 +4064,9 @@ function App() {
   const cEstorno = !isBank ? monthTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0) : 0;
   const cPd = !isBank ? monthTxs.filter(t => t.type === "transfer_in").reduce((s, t) => s + t.amount, 0) : 0;
   const cFatura = Math.max(0, cSp - cEstorno);
-  const moveTargets = accounts.filter(a => a.type === (curAcct ? curAcct.type : "bank") && a.id !== selAcctId).sort((a, b) => {
+  const moveCross = !!editItem && (editItem.type === "income" || editItem.type === "expense");
+  const moveTargets = accounts.filter(a => a.id !== selAcctId && (moveCross || a.type === (curAcct ? curAcct.type : "bank"))).sort((a, b) => {
+    if (a.type !== b.type) return a.type === "bank" ? -1 : 1;
     const pA = profiles.find(p => p.id === a.profileId);
     const pB = profiles.find(p => p.id === b.profileId);
     return (pA?.name || "").localeCompare(pB?.name || "");
@@ -4693,7 +4720,7 @@ function App() {
       setModal(null);
       setEditItem(null);
     },
-    title: "Mover para " + (isBank ? "outra conta" : "outro cartão")
+    title: moveCross ? "Mover para conta ou cartão" : "Mover para " + (isBank ? "outra conta" : "outro cartão")
   }, /*#__PURE__*/h("div", {
     style: {
       display: "flex",
@@ -4709,9 +4736,15 @@ function App() {
     style: {
       color: C.text
     }
-  }, editItem?.description), " \u2014 ", editItem ? fmt(editItem.amount) : ""), moveTargets.map(a => {
+  }, editItem?.description), " \u2014 ", editItem ? fmt(editItem.amount) : ""), moveCross && h("p", {
+    style: { color: C.textSec, fontSize: 11, marginTop: -4 }
+  }, isBank ? "Ao mover para um cartão, o vencimento é definido pelo dia de vencimento do cartão. Uma entrada vira estorno." : "Ao mover para uma conta, o vencimento é removido. Um estorno vira entrada."), moveTargets.flatMap((a, idx) => {
     const op = profiles.find(p => p.id === a.profileId);
-    return /*#__PURE__*/h("button", {
+    const header = moveCross && (idx === 0 || moveTargets[idx - 1].type !== a.type) ? h("div", {
+      key: "hdr-" + a.type,
+      style: { fontSize: 11, fontWeight: 700, color: C.textSec, textTransform: "uppercase", marginTop: idx === 0 ? 0 : 6 }
+    }, a.type === "bank" ? "Contas" : "Cartões") : null;
+    return [header, /*#__PURE__*/h("button", {
       key: a.id,
       style: {
         display: "flex",
@@ -4738,7 +4771,7 @@ function App() {
         color: C.textSec,
         marginLeft: "auto"
       }
-    }, "(", op.name, ")"));
+    }, "(", op.name, ")"))];
   }))), /*#__PURE__*/h(Modal, {
     open: modal === "editRecurScope",
     onClose: () => {
